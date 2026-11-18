@@ -24,6 +24,10 @@ import {
   type CashierAuditSummary,
   INFO_AUDIT_FLAGS,
 } from "@/domain/entities/audit";
+import {
+  SUPPLIER_PAYMENT_METHOD_LABELS,
+  type SupplierPaymentMethod,
+} from "@/domain/entities/receiving";
 import { round2 } from "@/domain/value-objects/money";
 import { STORE_TIME_ZONE, storeDateKey, storeDayRange } from "@/domain/value-objects/store-time";
 import {
@@ -60,7 +64,15 @@ const EVENT_TONES: Partial<Record<AuditEventType, string>> = {
   work_schedule_changed: "text-amber-700 dark:text-amber-400",
   shift_opened_off_schedule: "text-amber-700 dark:text-amber-400",
   clock_out_with_open_till: "text-destructive",
+  attendance_clock_in_blocked: "text-destructive",
+  attendance_clock_in_outside_window: "text-destructive",
+  receipt_unpaid: "text-amber-700 dark:text-amber-400",
 };
+
+// A received line whose invoice charged more (or less) than what arrived.
+function hasInvoiceGaps(payload: Record<string, unknown>) {
+  return Array.isArray(payload.gaps) && payload.gaps.length > 0;
+}
 
 const EVENT_CHANNELS: Record<string, string> = {
   online: "en caja",
@@ -313,6 +325,32 @@ async function AuditReport({ from, to }: { from: string; to: string }) {
                       ({channel})
                     </span>
                   )}
+                  {event.type === "promo_discount_changed" && (
+                    <div className="text-xs font-normal text-muted-foreground">
+                      {promoChangeDetail(event.payload)}
+                    </div>
+                  )}
+                  {(event.type === "receipt_paid" || event.type === "receipt_unpaid") && (
+                    <div className="text-xs font-normal text-muted-foreground">
+                      {receiptPaymentDetail(event.payload)}
+                    </div>
+                  )}
+                  {event.type === "goods_received" && (
+                    <div className="text-xs font-normal text-muted-foreground">
+                      {goodsReceivedDetail(event.payload)}
+                    </div>
+                  )}
+                  {event.type === "receipt_invoiced" && (
+                    <div
+                      className={
+                        hasInvoiceGaps(event.payload)
+                          ? "text-xs font-normal text-amber-700 dark:text-amber-400"
+                          : "text-xs font-normal text-muted-foreground"
+                      }
+                    >
+                      {receiptInvoicedDetail(event.payload)}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="text-sm">
                   {event.workerName ? (
@@ -407,4 +445,68 @@ export default async function AdminAuditPage({
       </Suspense>
     </div>
   );
+}
+
+const PROMO_ACTIONS: Record<string, string> = {
+  created: "creado",
+  renamed: "renombrado",
+  activated: "activado",
+  deactivated: "desactivado",
+};
+
+// "Promo fin de mes · 30% — creado" (renames show the old name too).
+// "Ingreso #12 · F001-123 · S/ 211.60 · Yape/Plin".
+function receiptPaymentDetail(payload: Record<string, unknown>) {
+  const method = SUPPLIER_PAYMENT_METHOD_LABELS[
+    String(payload.method ?? payload.previousMethod ?? "") as SupplierPaymentMethod
+  ];
+  return [
+    `Ingreso #${String(payload.receiptId)}`,
+    payload.docNumber ? String(payload.docNumber) : null,
+    typeof payload.total === "number" ? formatSoles(payload.total) : null,
+    method,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+// "Ingreso #7 · 2 productos · 72 und · 1 escaneado · con foto".
+function goodsReceivedDetail(payload: Record<string, unknown>) {
+  const lines = Number(payload.lines ?? 0);
+  const scanned = Number(payload.scanned ?? 0);
+  return [
+    `Ingreso #${String(payload.receiptId)}`,
+    `${lines} ${lines === 1 ? "producto" : "productos"}`,
+    `${String(payload.units ?? 0)} und`,
+    payload.withInvoice
+      ? "con factura"
+      : scanned > 0
+        ? `${scanned} escaneado${scanned === 1 ? "" : "s"}`
+        : "sin escanear",
+    payload.invoicePhoto ? "con foto" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+// "Ingreso #7 · F016-5981 · S/ 567.00 · 1 diferencia".
+function receiptInvoicedDetail(payload: Record<string, unknown>) {
+  const gaps = Array.isArray(payload.gaps) ? payload.gaps.length : 0;
+  return [
+    `Ingreso #${String(payload.receiptId)}`,
+    payload.docNumber ? String(payload.docNumber) : null,
+    typeof payload.total === "number" ? formatSoles(payload.total) : null,
+    gaps > 0 ? `${gaps} ${gaps === 1 ? "diferencia" : "diferencias"} con lo que llegó` : "coincide",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function promoChangeDetail(payload: Record<string, unknown>) {
+  const action = PROMO_ACTIONS[String(payload.action ?? "")] ?? "modificado";
+  const percent = payload.percent !== undefined ? ` · ${String(payload.percent)}%` : "";
+  if (payload.action === "renamed") {
+    return `${String(payload.from)} → ${String(payload.to)}${percent} — ${action}`;
+  }
+  return `${String(payload.name ?? "")}${percent} — ${action}`;
 }

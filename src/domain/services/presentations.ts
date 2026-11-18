@@ -49,3 +49,16 @@ export function computeUnitsTotal(
 export function toUnits(quantity: number, unitsTotal: number) {
   return quantity * unitsTotal;
 }
+
+// How suppliers usually call their packs; offered while typing a name (any
+// other can be typed).
+export const PRESENTATION_NAME_SUGGESTIONS = [
+  "Caja",
+  "Cajón",
+  "Display",
+  "Paquete",
+  "Fardo",
+  "Six pack",
+  "Tira",
+  "Bolsa",
+];

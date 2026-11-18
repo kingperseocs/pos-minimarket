@@ -19,9 +19,10 @@ export async function getWorkerSnapshotUseCase(deps: {
     generatedAt: now.toISOString(),
     policy: policy && {
       id: policy.id,
-      maxDiscountedUnitsPerSale: policy.maxDiscountedUnitsPerSale,
-      maxDiscountedSalesPerDay: policy.maxDiscountedSalesPerDay,
+      maxDiscountedUnitsPerDay: policy.maxDiscountedUnitsPerDay,
       pointsPerSol: policy.pointsPerSol,
+      redeemPointsPerSol: policy.redeemPointsPerSol,
+      minRedeemPoints: policy.minRedeemPoints,
       birthdayGiftMaxAmount: policy.birthdayGiftMaxAmount,
     },
     workers,

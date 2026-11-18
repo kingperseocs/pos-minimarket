@@ -10,6 +10,8 @@ export interface Presentation {
   qtyOfParent: number;
   unitsTotal: number;
   barcode: string | null;
+  // The supplier's code to order this pack (not the barcode).
+  supplierCode: string | null;
   isActive: boolean;
 }
 
@@ -19,4 +21,5 @@ export interface PresentationData {
   parentId: number | null;
   qtyOfParent: number;
   barcode: string | null;
+  supplierCode: string | null;
 }

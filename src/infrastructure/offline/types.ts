@@ -37,7 +37,13 @@ export type PendingSale = {
   subtotal?: number;
   discountTotal?: number;
   giftTotal?: number;
+  // To whole soles on discounted sales; absent on sales queued before.
+  roundingAmount?: number;
   policyId?: number;
+  // Percentage discount applied to the whole sale (absent when none).
+  promoDiscountId?: number;
+  // Worker points spent as whole soles off the sale (absent when none).
+  pointsRedeemed?: number;
   status: "pending" | "syncing" | "error";
   errorMessage?: string;
 };
@@ -56,9 +62,14 @@ export type CachedWorker = {
 
 export type CachedPolicy = {
   id: number;
-  maxDiscountedUnitsPerSale: number;
-  maxDiscountedSalesPerDay: number;
+  // The worker's discounted units per day. Snapshots cached before the
+  // daily allowance carry the old per-sale field instead.
+  maxDiscountedUnitsPerDay?: number;
+  maxDiscountedUnitsPerSale?: number;
   pointsPerSol: number;
+  // Absent on snapshots cached before points could be redeemed.
+  redeemPointsPerSol?: number;
+  minRedeemPoints?: number;
   birthdayGiftMaxAmount: number;
 };
 

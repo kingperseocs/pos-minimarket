@@ -7,7 +7,7 @@ import { saveSchedule } from "@/actions/attendance";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { DEFAULT_TOLERANCE_MIN, type WorkSchedule } from "@/domain/entities/attendance";
+import { DEFAULT_EARLY_MIN, DEFAULT_TOLERANCE_MIN, type WorkSchedule } from "@/domain/entities/attendance";
 import { WEEK_ORDER, WEEKDAY_LABELS } from "@/domain/services/attendance";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,7 @@ type DayRow = {
   startTime: string;
   endTime: string;
   toleranceMin: string;
+  earlyMin: string;
 };
 
 function initialRows(schedules: WorkSchedule[]): DayRow[] {
@@ -28,12 +29,14 @@ function initialRows(schedules: WorkSchedule[]): DayRow[] {
       startTime: day?.startTime ?? "07:00",
       endTime: day?.endTime ?? "15:00",
       toleranceMin: String(day?.toleranceMin ?? DEFAULT_TOLERANCE_MIN),
+      earlyMin: String(day?.earlyMin ?? DEFAULT_EARLY_MIN),
     };
   });
 }
 
 // One person's week: which days they work, from when to when, and how many
-// minutes of tolerance before it counts as late.
+// minutes of tolerance before it counts as late, and how many minutes before
+// the entrance "Marcar entrada" is enabled (days off can't be marked).
 export function ScheduleEditor({
   person,
   schedules,
@@ -67,11 +70,12 @@ export function ScheduleEditor({
         userId: person.id,
         days: rows
           .filter((r) => r.works)
-          .map(({ weekday, startTime, endTime, toleranceMin }) => ({
+          .map(({ weekday, startTime, endTime, toleranceMin, earlyMin }) => ({
             weekday,
             startTime,
             endTime,
             toleranceMin,
+            earlyMin,
           })),
       });
       if (!result.ok) return setError(result.error);
@@ -90,17 +94,18 @@ export function ScheduleEditor({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <div className="grid grid-cols-[minmax(7rem,1fr)_repeat(3,minmax(0,1fr))] items-center gap-2 text-xs font-medium text-muted-foreground uppercase">
+        <div className="grid grid-cols-[minmax(7rem,1fr)_repeat(4,minmax(0,1fr))] items-center gap-2 text-xs font-medium text-muted-foreground uppercase">
           <span>Día</span>
           <span>Entrada</span>
           <span>Salida</span>
+          <span>Marcar desde (min antes)</span>
           <span>Tolerancia (min)</span>
         </div>
         {rows.map((row) => (
           <div
             key={row.weekday}
             className={cn(
-              "grid grid-cols-[minmax(7rem,1fr)_repeat(3,minmax(0,1fr))] items-center gap-2",
+              "grid grid-cols-[minmax(7rem,1fr)_repeat(4,minmax(0,1fr))] items-center gap-2",
               !row.works && "opacity-60",
             )}
           >
@@ -131,19 +136,30 @@ export function ScheduleEditor({
                   type="number"
                   min={0}
                   max={120}
+                  aria-label={`Minutos antes para marcar ${WEEKDAY_LABELS[row.weekday]}`}
+                  value={row.earlyMin}
+                  onChange={(e) => update(row.weekday, { earlyMin: e.target.value })}
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  max={120}
                   aria-label={`Tolerancia ${WEEKDAY_LABELS[row.weekday]}`}
                   value={row.toleranceMin}
                   onChange={(e) => update(row.weekday, { toleranceMin: e.target.value })}
                 />
               </>
             ) : (
-              <span className="col-span-3 text-sm text-muted-foreground">Libre</span>
+              <span className="col-span-4 text-sm text-muted-foreground">Libre</span>
             )}
           </div>
         ))}
         <p className="text-xs text-muted-foreground">
           Si la salida es antes que la entrada (ej. 22:00 a 06:00), el turno termina al día
-          siguiente. Cambiar el horario no cambia las tardanzas ya registradas.
+          siguiente. El botón «Marcar entrada» se habilita los minutos indicados antes de la
+          entrada (ej. 5: desde las 06:55 para entrar 07:00); las horas trabajadas cuentan desde
+          la hora de entrada. Los días libres no se puede marcar: registra la asistencia tú mismo.
+          Cambiar el horario no cambia las tardanzas ya registradas.
         </p>
         {error && (
           <p role="alert" className="text-sm text-destructive">

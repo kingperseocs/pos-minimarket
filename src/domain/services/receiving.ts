@@ -1,4 +1,5 @@
 import { ValidationError } from "../errors";
+import { round2 } from "../value-objects/money";
 
 // Costs per unit are kept with 4 decimals: a candy bought at S/ 12.00 the
 // box of 144 costs S/ 0.0833, and rounding that to cents would distort the
@@ -47,6 +48,66 @@ export function weightedAverageCost(input: {
   return round4(
     (currentUnits * currentCost + inTotal) / (currentUnits + inUnits),
   );
+}
+
+// Average cost once a receipt counted earlier gets its invoice: its units
+// are already part of `onHand`, so they are taken out of the "before" stock
+// to not count them twice.
+export function costAfterInvoice(input: {
+  currentCost: number | null;
+  onHand: number;
+  receivedUnits: number;
+  receivedTotal: number;
+}): number | null {
+  return weightedAverageCost({
+    currentUnits: input.onHand - input.receivedUnits,
+    currentCost: input.currentCost,
+    inUnits: input.receivedUnits,
+    inTotal: input.receivedTotal,
+  });
+}
+
+// Invoiced against counted, per line: units < 0 were invoiced but didn't
+// arrive, > 0 arrived without being invoiced. Amount at the line's cost.
+export function invoiceGap(line: {
+  units: number;
+  receivedUnits: number;
+  unitCost: number;
+}): { units: number; amount: number } | null {
+  const units = line.receivedUnits - line.units;
+  if (units === 0) return null;
+  return { units, amount: round2(Math.abs(units) * line.unitCost) };
+}
+
+export const MAX_RECEIPT_DISCOUNT_PERCENT = 90;
+
+// What is paid for a line with the supplier's volume discount: S/ 230.00
+// with 8% → S/ 211.60.
+export function discountedLineTotal(listTotal: number, discountPercent: number) {
+  if (discountPercent < 0 || discountPercent > MAX_RECEIPT_DISCOUNT_PERCENT) {
+    throw new ValidationError(
+      `El descuento debe estar entre 0 y ${MAX_RECEIPT_DISCOUNT_PERCENT}%`,
+    );
+  }
+  return round2((listTotal * (100 - discountPercent)) / 100);
+}
+
+// "YYYY-MM-DD" plus `days`, as calendar days (no time zone involved).
+function addDays(dateKey: string, days: number) {
+  const date = new Date(`${dateKey}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+// The invoice is due the day it arrives, or after the supplier's credit days.
+export function receiptDueDate(arrivalDay: string, creditDays: number | null) {
+  return addDays(arrivalDay, creditDays && creditDays > 0 ? creditDays : 0);
+}
+
+// Days until an unpaid invoice is due (< 0: overdue by that many days).
+export function daysUntilDue(dueDate: string, today: string) {
+  const ms = Date.parse(`${dueDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`);
+  return Math.round(ms / 86_400_000);
 }
 
 // A transfer can only move what is physically in the origin.

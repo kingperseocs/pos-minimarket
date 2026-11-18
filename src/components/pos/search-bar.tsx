@@ -11,13 +11,13 @@ export function SearchBar({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="relative w-full max-w-md">
+    <div className="relative min-w-56 flex-1 sm:max-w-xl">
       <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Buscar producto..."
-        className="pl-9"
+        placeholder="Buscar producto o código…"
+        className="h-10 pl-9"
       />
     </div>
   );

@@ -97,3 +97,22 @@ export class IdentityServiceUnavailableError extends Error {
     this.name = "IdentityServiceUnavailableError";
   }
 }
+
+export class RucNotFoundError extends Error {
+  constructor(message = "RUC no encontrado en SUNAT") {
+    super(message);
+    this.name = "RucNotFoundError";
+  }
+}
+
+// "Marcar entrada" outside the window the admin allows (too early, or a day
+// without schedule). Shown to the cashier as-is.
+export class ClockInNotAllowedError extends ValidationError {
+  constructor(
+    public readonly reason: "too_early" | "day_off",
+    message: string,
+  ) {
+    super(message);
+    this.name = "ClockInNotAllowedError";
+  }
+}

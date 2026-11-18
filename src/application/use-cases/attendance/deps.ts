@@ -26,5 +26,7 @@ export function snapshotShift(record: {
     start: record.scheduledStart,
     end: record.scheduledEnd,
     toleranceMin: record.toleranceMin ?? 0,
+    // Only matters before clocking in.
+    earlyMin: 0,
   };
 }

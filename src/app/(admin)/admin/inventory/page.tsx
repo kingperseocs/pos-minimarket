@@ -19,7 +19,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/layout/page-skeleton";
 import {
   dailyCountRepository,
   inventoryRepository,
@@ -27,11 +27,12 @@ import {
 } from "@/infrastructure/repositories";
 
 async function InventoryContent() {
-  const [{ locations, stock }, expiring, gaps, counts] = await Promise.all([
+  const [{ locations, stock }, expiring, gaps, counts, uninvoiced] = await Promise.all([
     getInventoryUseCase(inventoryRepository),
     getExpiringLotsUseCase(inventoryRepository),
     listDiscrepanciesUseCase(receivingRepository),
     listCountItemsUseCase(dailyCountRepository),
+    receivingRepository.countPendingInvoices(),
   ]);
   const openGaps = gaps.filter((g) => g.status === "open").length;
   const pendingCounts = counts.filter((c) => c.status === "pending").length;
@@ -99,6 +100,23 @@ async function InventoryContent() {
             Revísalos antes de ajustar el stock.{" "}
             <Link href="/admin/inventory/conteos" className="underline">
               Revisar conteos
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {uninvoiced > 0 && (
+        <Alert>
+          <TriangleAlertIcon />
+          <AlertTitle>
+            {uninvoiced === 1
+              ? "1 recepción del Almacén espera su factura"
+              : `${uninvoiced} recepciones del Almacén esperan su factura`}
+          </AlertTitle>
+          <AlertDescription>
+            La mercadería ya está en stock, pero falta registrar cuánto se pagó.{" "}
+            <Link href="/admin/inventory/ingresos?factura=pendiente" className="underline">
+              Registrar facturas
             </Link>
           </AlertDescription>
         </Alert>
@@ -176,7 +194,7 @@ async function InventoryContent() {
 
 export default function AdminInventoryPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+    <Suspense fallback={<PageSkeleton />}>
       <InventoryContent />
     </Suspense>
   );

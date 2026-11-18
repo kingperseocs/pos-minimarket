@@ -19,9 +19,10 @@ import { Label } from "@/components/ui/label";
 import { formatSoles } from "@/lib/money";
 
 export type PolicyView = {
-  maxDiscountedUnitsPerSale: number;
-  maxDiscountedSalesPerDay: number;
+  maxDiscountedUnitsPerDay: number;
   pointsPerSol: number;
+  redeemPointsPerSol: number;
+  minRedeemPoints: number;
   birthdayGiftMaxAmount: number;
   createdAt: string;
   createdByName: string | null;
@@ -51,19 +52,15 @@ export function DiscountPolicyCard({
         {active ? (
           <ul className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
             <li>
-              Descuento en soles <strong>según cada producto</strong> (
-              <Link href="/admin/products" className="underline">
-                Productos
+              El <strong>%</strong> que elija la cajera (
+              <Link href="/admin/descuentos" className="underline">
+                Descuentos %
               </Link>
               )
             </li>
             <li>
-              En las primeras <strong>{active.maxDiscountedUnitsPerSale}</strong>{" "}
-              unidades de cada compra
-            </li>
-            <li>
-              Máx. <strong>{active.maxDiscountedSalesPerDay}</strong> compras con
-              descuento por día
+              En <strong>{active.maxDiscountedUnitsPerDay}</strong> productos de una
+              compra de {active.maxDiscountedUnitsPerDay} o más · 1 compra con descuento al día
             </li>
             <li>
               {active.birthdayGiftMaxAmount > 0 ? (
@@ -77,6 +74,18 @@ export function DiscountPolicyCard({
             </li>
             <li>
               <strong>{active.pointsPerSol}</strong> punto(s) por cada S/ 1
+            </li>
+            <li>
+              {active.redeemPointsPerSol > 0 ? (
+                <>
+                  Canje: <strong>{active.redeemPointsPerSol}</strong> pts = S/ 1
+                  {active.minRedeemPoints > 0 && (
+                    <> (desde {active.minRedeemPoints} pts)</>
+                  )}
+                </>
+              ) : (
+                "Sin canje de puntos"
+              )}
             </li>
           </ul>
         ) : (
@@ -106,18 +115,20 @@ function PolicyDialog({
   versions: PolicyView[];
 }) {
   const [isPending, startTransition] = useTransition();
-  const [units, setUnits] = useState(String(active?.maxDiscountedUnitsPerSale ?? 3));
-  const [perDay, setPerDay] = useState(String(active?.maxDiscountedSalesPerDay ?? 2));
+  const [units, setUnits] = useState(String(active?.maxDiscountedUnitsPerDay ?? 3));
   const [points, setPoints] = useState(String(active?.pointsPerSol ?? 1));
   const [gift, setGift] = useState(String(active?.birthdayGiftMaxAmount ?? 10));
+  const [redeemRate, setRedeemRate] = useState(String(active?.redeemPointsPerSol ?? 0));
+  const [redeemMin, setRedeemMin] = useState(String(active?.minRedeemPoints ?? 0));
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     startTransition(async () => {
       const result = await updateDiscountPolicy({
-        maxDiscountedUnitsPerSale: Number(units),
-        maxDiscountedSalesPerDay: Number(perDay),
+        maxDiscountedUnitsPerDay: Number(units),
         pointsPerSol: Number(points),
+        redeemPointsPerSol: Number(redeemRate),
+        minRedeemPoints: Number(redeemMin),
         birthdayGiftMaxAmount: Number(gift),
       });
       if (!result.ok) {
@@ -137,7 +148,8 @@ function PolicyDialog({
         <DialogHeader>
           <DialogTitle>Reglas del descuento para trabajadores</DialogTitle>
           <DialogDescription>
-            El monto de descuento (en soles) se configura en cada producto.
+            Los porcentajes (10%, 20%…) se configuran en Descuentos %; la cajera
+            elige uno al identificar al trabajador con su DNI.
             Aquí van los límites, el regalo de cumpleaños y los puntos. Los cambios se guardan como una versión
             nueva: las ventas anteriores conservan la regla con la que se
             cobraron.
@@ -147,22 +159,12 @@ function PolicyDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               id="units"
-              label="Unidades con descuento por compra"
-              hint="Ej. 3: si lleva 5 gaseosas, 3 van con descuento y 2 a precio normal."
+              label="Productos con descuento por compra (mínimo para aplicar)"
+              hint="Ej. 3: con 3 o más productos, el % va en 3; con 1 o 2, sin descuento. Una compra con descuento al día."
               value={units}
               onChange={setUnits}
               step="1"
               min="1"
-              max="20"
-            />
-            <Field
-              id="per-day"
-              label="Compras con descuento por día"
-              hint="Evita que presten su DNI a otras personas."
-              value={perDay}
-              onChange={setPerDay}
-              step="1"
-              min="0"
               max="50"
             />
             <Field
@@ -185,6 +187,26 @@ function PolicyDialog({
               min="0"
               max="100"
             />
+            <Field
+              id="redeem-rate"
+              label="Puntos que valen S/ 1 al canjear"
+              hint="Ej. 100: con 500 puntos el trabajador paga S/ 5 menos. 0 = sin canje."
+              value={redeemRate}
+              onChange={setRedeemRate}
+              step="1"
+              min="0"
+              max="100000"
+            />
+            <Field
+              id="redeem-min"
+              label="Mínimo de puntos para canjear"
+              hint="Por debajo de este saldo la caja no ofrece el canje."
+              value={redeemMin}
+              onChange={setRedeemMin}
+              step="1"
+              min="0"
+              max="1000000"
+            />
           </div>
 
           {versions.length > 0 && (
@@ -196,9 +218,9 @@ function PolicyDialog({
                 {versions.map((v) => (
                   <li key={v.createdAt} className="flex justify-between gap-3">
                     <span>
-                      {v.maxDiscountedUnitsPerSale} unid./compra ·{" "}
-                      {v.maxDiscountedSalesPerDay}/día · regalo{" "}
+                      {v.maxDiscountedUnitsPerDay} prod./compra (1 al día) · regalo{" "}
                       {formatSoles(v.birthdayGiftMaxAmount)} · {v.pointsPerSol} pt/S/1
+                      {v.redeemPointsPerSol > 0 && ` · canje ${v.redeemPointsPerSol} pts = S/ 1`}
                     </span>
                     <span className="shrink-0">
                       {dateFormat.format(new Date(v.createdAt))}
@@ -237,7 +259,9 @@ function Field({
 } & Omit<React.ComponentProps<"input">, "onChange" | "value">) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} required>
+        {label}
+      </Label>
       <Input
         id={id}
         type="number"

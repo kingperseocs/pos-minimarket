@@ -8,6 +8,11 @@ export const categorySchema = z.object({
     .trim()
     .min(1, "El nombre es obligatorio")
     .max(40, "Máximo 40 caracteres"),
+  // Main category it belongs to; blank = it is a main category.
+  parentId: z.preprocess(
+    (value) => (value === "" || value === undefined ? null : value),
+    idSchema.nullable(),
+  ),
   icon: z.enum(CATEGORY_ICONS, "Ícono no válido").nullable().default(null),
   sortOrder: z.coerce
     .number()

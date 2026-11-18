@@ -146,7 +146,13 @@ function DialogDescription({
   )
 }
 
+// Opens a dialog from outside it (e.g. from a row's "⋮" menu).
+const createDialogHandle = DialogPrimitive.createHandle
+type DialogHandle = DialogPrimitive.Handle<unknown>
+
+export type { DialogHandle }
 export {
+  createDialogHandle,
   Dialog,
   DialogClose,
   DialogContent,

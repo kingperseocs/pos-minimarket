@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { WorkSchedule } from "../entities/attendance";
+import { storeDateKey } from "../value-objects/store-time";
 import {
   buildPersonDay,
+  clockInBlockedMessage,
+  clockInWindow,
   computeEarlyLeave,
   computeLateMinutes,
   dateKeysBetween,
@@ -13,6 +16,7 @@ import {
   resolvePunchTime,
   scheduleFor,
   summarizeDays,
+  workedMinutes,
   type DayRecordInput,
 } from "./attendance";
 
@@ -26,6 +30,7 @@ const juan: WorkSchedule[] = [1, 2, 3, 4, 5, 6].map((weekday) => ({
   startTime: "07:00",
   endTime: "15:00",
   toleranceMin: 10,
+  earlyMin: 5,
 }));
 
 // 2026-10-05 is a Monday, 2026-10-04 a Sunday.
@@ -78,6 +83,51 @@ describe("computeLateMinutes", () => {
 
   it("no schedule, no lateness", () => {
     assert.equal(computeLateMinutes(lima(SUNDAY, "09:00"), null), 0);
+  });
+});
+
+describe("clockInWindow", () => {
+  it("opens earlyMin minutes before the entrance", () => {
+    const early = clockInWindow(lima(MONDAY, "06:00"), juan);
+    assert.equal(early.allowed, false);
+    assert.equal(!early.allowed && early.reason, "too_early");
+    assert.equal(!early.allowed && early.opensAt?.toISOString(), "2026-10-05T11:55:00.000Z");
+    assert.match(clockInBlockedMessage(early as never), /06:55/);
+    assert.equal(clockInWindow(lima(MONDAY, "06:54"), juan).allowed, false);
+    assert.equal(clockInWindow(lima(MONDAY, "06:55"), juan).allowed, true);
+  });
+
+  it("late arrivals can still mark", () => {
+    assert.equal(clockInWindow(lima(MONDAY, "07:25"), juan).allowed, true);
+    assert.equal(clockInWindow(lima(MONDAY, "16:00"), juan).allowed, true);
+  });
+
+  it("a day off can't be marked", () => {
+    const off = clockInWindow(lima(SUNDAY, "09:00"), juan);
+    assert.equal(!off.allowed && off.reason, "day_off");
+  });
+
+  it("earlyMin 0 opens exactly at the entrance", () => {
+    const strict = juan.map((d) => ({ ...d, earlyMin: 0 }));
+    assert.equal(clockInWindow(lima(MONDAY, "06:59"), strict).allowed, false);
+    assert.equal(clockInWindow(lima(MONDAY, "07:00"), strict).allowed, true);
+  });
+
+  it("a shift starting at midnight can be marked the evening before", () => {
+    const night = [{ weekday: 1, startTime: "00:00", endTime: "08:00", toleranceMin: 10, earlyMin: 5 }];
+    const window = clockInWindow(lima(SUNDAY, "23:57"), night);
+    assert.equal(window.allowed, true);
+    assert.equal(window.allowed && storeDateKey(window.shift.start), MONDAY);
+    assert.equal(clockInWindow(lima(SUNDAY, "23:50"), night).allowed, false);
+  });
+});
+
+describe("workedMinutes", () => {
+  it("counts from the scheduled start when marked earlier", () => {
+    const start = lima(MONDAY, "07:00");
+    assert.equal(workedMinutes(lima(MONDAY, "06:56"), lima(MONDAY, "15:00"), start), 480);
+    assert.equal(workedMinutes(lima(MONDAY, "07:20"), lima(MONDAY, "15:00"), start), 460);
+    assert.equal(workedMinutes(lima(MONDAY, "06:56"), lima(MONDAY, "15:00")), 484);
   });
 });
 

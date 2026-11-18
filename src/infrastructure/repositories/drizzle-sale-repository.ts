@@ -16,6 +16,7 @@ type SaleRow = typeof sales.$inferSelect & {
   cashier: { name: string } | null;
   courtesyApprover: { name: string } | null;
   worker: { fullName: string; dni: string } | null;
+  promoDiscount: { name: string } | null;
   items: (typeof saleItems.$inferSelect)[];
 };
 
@@ -31,13 +32,19 @@ function toSale(row: SaleRow): Sale {
     discountTotal: Number(row.discountTotal),
     giftTotal: Number(row.giftTotal),
     courtesyApprovedByName: row.courtesyApprover?.name ?? null,
+    rounding: Number(row.roundingAmount),
     total: Number(row.total),
     workerId: row.workerId,
     workerName: row.worker?.fullName ?? null,
     workerDni: row.worker?.dni ?? null,
     workerVerification: row.workerVerification,
     pointsEarned: row.pointsEarned,
+    pointsRedeemed: row.pointsRedeemed,
+    redeemTotal: Number(row.redeemTotal),
     auditFlags: row.auditFlags as AuditFlag[],
+    promoDiscountId: row.promoDiscountId,
+    promoDiscountName: row.promoDiscount?.name ?? null,
+    promoDiscountPercent: row.promoDiscountPercent,
     clientCreatedAt: row.clientCreatedAt,
     syncedAt: row.syncedAt,
     createdAt: row.createdAt,
@@ -61,6 +68,7 @@ const withRelations = {
   cashier: { columns: { name: true } },
   courtesyApprover: { columns: { name: true } },
   worker: { columns: { fullName: true, dni: true } },
+  promoDiscount: { columns: { name: true } },
   items: true,
 } as const;
 
@@ -78,12 +86,17 @@ export class DrizzleSaleRepository implements SaleRepository {
           subtotal: record.subtotal.toFixed(2),
           discountTotal: record.discountTotal.toFixed(2),
           giftTotal: record.giftTotal.toFixed(2),
+          roundingAmount: record.rounding.toFixed(2),
           total: record.total.toFixed(2),
           workerId: record.workerId,
           policyId: record.policyId,
           workerVerification: record.workerVerification,
           pointsEarned: record.pointsEarned,
+          pointsRedeemed: record.pointsRedeemed,
+          redeemTotal: record.redeemTotal.toFixed(2),
           auditFlags: record.auditFlags,
+          promoDiscountId: record.promoDiscountId,
+          promoDiscountPercent: record.promoDiscountPercent,
           clientCreatedAt: new Date(record.clientCreatedAt),
           syncedAt: new Date(),
         })
@@ -128,19 +141,28 @@ export class DrizzleSaleRepository implements SaleRepository {
 
       await moveStockForSale(tx, record, saleId, catalog);
 
-      if (record.workerId && record.pointsEarned > 0) {
-        await tx.insert(loyaltyLedger).values({
-          workerId: record.workerId,
-          saleId,
-          points: record.pointsEarned,
-          type: "earn",
-        });
-        await tx
-          .update(workers)
-          .set({
-            pointsBalance: sql`${workers.pointsBalance} + ${record.pointsEarned}`,
-          })
-          .where(eq(workers.id, record.workerId));
+      if (record.workerId) {
+        // Redeemed points leave even if the balance goes negative: the
+        // money was already taken off at the till (flagged POINTS_OVERDRAWN).
+        const movements = [
+          { points: record.pointsEarned, type: "earn" as const },
+          { points: -record.pointsRedeemed, type: "redeem" as const },
+        ].filter((m) => m.points !== 0);
+        if (movements.length > 0) {
+          await tx.insert(loyaltyLedger).values(
+            movements.map((m) => ({
+              workerId: record.workerId!,
+              saleId,
+              points: m.points,
+              type: m.type,
+            })),
+          );
+          const delta = record.pointsEarned - record.pointsRedeemed;
+          await tx
+            .update(workers)
+            .set({ pointsBalance: sql`${workers.pointsBalance} + ${delta}` })
+            .where(eq(workers.id, record.workerId));
+        }
       }
 
       return saleId;

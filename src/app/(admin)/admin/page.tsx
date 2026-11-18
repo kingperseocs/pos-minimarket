@@ -1,17 +1,29 @@
 import { TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
+import { getSalesAnalyticsUseCase } from "@/application/use-cases/dashboard/sales-analytics";
 import { getSetupProgressUseCase } from "@/application/use-cases/dashboard/setup-progress";
+import { getGoalProgressUseCase } from "@/application/use-cases/goals/goal-progress";
+import { GoalHeroCard } from "@/components/goals/goal-hero-card";
+import { goalDeps } from "@/infrastructure/deps";
 import { getExpiringLotsUseCase } from "@/application/use-cases/inventory/get-inventory";
 import { ExpiringLotsPanel } from "@/components/admin/inventory/expiring-lots-panel";
+import { SalesAnalyticsSection } from "@/components/admin/analytics/sales-analytics-section";
 import { SetupSteps } from "@/components/admin/setup-steps";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ANALYTICS_PERIODS,
+  type AnalyticsPeriod,
+} from "@/domain/entities/sales-analytics";
 import {
   cashShiftRepository,
   categoryRepository,
   inventoryRepository,
   productRepository,
+  salesAnalyticsRepository,
+  salesGoalRepository,
+  sampleSalesAnalyticsRepository,
   supplierRepository,
 } from "@/infrastructure/repositories";
 
@@ -55,13 +67,52 @@ async function ExpiringSection() {
   return <ExpiringLotsPanel lots={lots} todayKey={todayKey} limit={5} />;
 }
 
-export default function AdminDashboardPage() {
+// The month's sales goal with the dog. In the example mode the sales are made
+// up too, against the real goal (or S/ 20,000 if there is none yet).
+async function GoalSection({ demo }: { demo: boolean }) {
+  const progress = await getGoalProgressUseCase(
+    demo
+      ? {
+          goals: {
+            findEffective: async (month) =>
+              (await salesGoalRepository.findEffective(month)) ?? {
+                id: 0,
+                month,
+                amount: 20000,
+                createdById: null,
+                createdAt: new Date(),
+              },
+          },
+          analytics: sampleSalesAnalyticsRepository,
+        }
+      : goalDeps,
+  );
+  return <GoalHeroCard progress={progress} demo={demo} />;
+}
+
+// "?ejemplo=1" swaps in made-up sales so the admin can preview the section
+// before the store has real ones (the page says so clearly).
+async function AnalyticsSection({ period, demo }: { period: AnalyticsPeriod; demo: boolean }) {
+  const report = await getSalesAnalyticsUseCase(
+    demo ? sampleSalesAnalyticsRepository : salesAnalyticsRepository,
+    period,
+  );
+  return <SalesAnalyticsSection report={report} demo={demo} />;
+}
+
+export default async function AdminDashboardPage({ searchParams }: PageProps<"/admin">) {
+  const { periodo, ejemplo } = await searchParams;
+  const period: AnalyticsPeriod = ANALYTICS_PERIODS.includes(periodo as AnalyticsPeriod)
+    ? (periodo as AnalyticsPeriod)
+    : "7d";
+  const demo = ejemplo === "1";
+
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">Dashboard</h1>
         <p className="text-muted-foreground">
-          Gestiona productos, usuarios y revisa las ventas de la tienda.
+          Gestiona tu tienda y mira cómo van tus ventas.
         </p>
       </div>
       <Suspense fallback={null}>
@@ -69,6 +120,12 @@ export default function AdminDashboardPage() {
       </Suspense>
       <Suspense fallback={<Skeleton className="h-64 rounded-xl" />}>
         <SetupSection />
+      </Suspense>
+      <Suspense fallback={<Skeleton className="h-56 rounded-xl" />}>
+        <GoalSection demo={demo} />
+      </Suspense>
+      <Suspense fallback={<Skeleton className="h-[40rem] rounded-xl" />}>
+        <AnalyticsSection period={period} demo={demo} />
       </Suspense>
       <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
         <ExpiringSection />

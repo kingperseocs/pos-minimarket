@@ -29,6 +29,7 @@ function toPresentation({ presentation: p, parentName }: Row): Presentation {
     qtyOfParent: p.qtyOfParent,
     unitsTotal: p.unitsTotal,
     barcode: p.barcode,
+    supplierCode: p.supplierCode,
     isActive: p.isActive,
   };
 }

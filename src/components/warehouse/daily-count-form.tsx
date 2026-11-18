@@ -13,6 +13,7 @@ import {
 } from "@/components/admin/inventory/lot-lines-field";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { DraftControls, toastCleared } from "@/components/admin/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -21,6 +22,8 @@ import { COUNT_REASON_LABELS } from "@/domain/services/daily-count";
 import { QuantityStepper } from "@/components/scanner/quantity-stepper";
 import { ScanHint, useScanFlash } from "@/components/scanner/scanner-status";
 import type { CaptureSource } from "@/domain/value-objects/capture-source";
+import { storeDateKey } from "@/domain/value-objects/store-time";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import { useScanner } from "@/hooks/use-scanner";
 import { cn } from "@/lib/utils";
 
@@ -52,7 +55,7 @@ export function DailyCountForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [entries, setEntries] = useState<Record<number, Entry>>(() =>
+  const blankEntries = (): Record<number, Entry> =>
     Object.fromEntries(
       products.map((p) => [
         p.productId,
@@ -64,8 +67,39 @@ export function DailyCountForm({
           lots: p.lotDates.length ? p.lotDates.map((d) => newLotLine(d)) : [newLotLine()],
         },
       ]),
-    ),
-  );
+    );
+  const [entries, setEntries] = useState<Record<number, Entry>>(blankEntries);
+
+  // A count half-done survives leaving the page or reloading it — for today
+  // only: tomorrow's count starts fresh.
+  const draft = useFormDraft<Record<number, Entry>>({
+    key: `daily-count:${locationId}:${storeDateKey(new Date())}`,
+    values: entries,
+    baseline: blankEntries(),
+    enabled: products.length > 0,
+    onRestore: applyEntries,
+  });
+
+  function applyEntries(next: Record<number, Entry>) {
+    // Only today's products; anything new on the list starts blank.
+    const blank = blankEntries();
+    setEntries(
+      Object.fromEntries(
+        products.map((p) => {
+          const saved = next[p.productId];
+          return [p.productId, saved ? { ...blank[p.productId], ...saved } : blank[p.productId]];
+        }),
+      ),
+    );
+  }
+
+  function handleClear() {
+    const before = entries;
+    applyEntries(blankEntries());
+    draft.clear();
+    setError(null);
+    toastCleared(() => applyEntries(before), "Conteo limpiado");
+  }
 
   const feedback = useScanFlash();
   const [scannedId, setScannedId] = useState<number | null>(null);
@@ -157,6 +191,7 @@ export function DailyCountForm({
         return;
       }
       const { matched, pending } = result.data;
+      draft.clear();
       toast.success("Conteo guardado. ¡Gracias!", {
         description:
           pending === 0
@@ -181,34 +216,50 @@ export function DailyCountForm({
           <Card
             key={p.productId}
             id={`count-card-${p.productId}`}
-            className={cn(p.productId === scannedId && "ring-2 ring-primary")}
+            className={cn(
+              "gap-0 overflow-hidden border-l-4 py-0",
+              entry.none || (p.tracksExpiry ? lotLinesTotal(entry.lots) > 0 : entry.counted !== "")
+                ? "border-l-emerald-500"
+                : "border-l-muted-foreground/30",
+              p.productId === scannedId && "ring-2 ring-primary",
+            )}
           >
-            <CardContent className="flex flex-col gap-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-medium">
-                    {index + 1}. {p.productName}
-                  </div>
+            <div className="flex items-start justify-between gap-3 border-b bg-muted/30 px-4 py-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="mt-0.5 rounded-md bg-foreground/90 px-1.5 py-0.5 font-mono text-xs font-semibold text-background tabular-nums">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <div className="min-w-0 leading-tight">
+                  <div className="truncate font-semibold">{p.productName}</div>
                   <div className="text-xs text-muted-foreground">{p.categoryName}</div>
                 </div>
-                <div className="flex flex-wrap justify-end gap-1">
-                  {p.reasons.map((reason) => (
-                    <Badge key={reason} variant="outline" className="text-xs">
-                      {COUNT_REASON_LABELS[reason]}
-                    </Badge>
-                  ))}
-                </div>
               </div>
+              <div className="flex flex-wrap justify-end gap-1">
+                {p.reasons.map((reason) => (
+                  <Badge key={reason} variant="outline" className="bg-background text-xs">
+                    {COUNT_REASON_LABELS[reason]}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <CardContent className="flex flex-col gap-3 px-4 py-4">
               {p.tracksExpiry ? (
-                <div className="flex flex-col gap-2">
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <>
+                  <label
+                    className={cn(
+                      "flex min-h-11 cursor-pointer items-center gap-3 self-start rounded-lg border px-3 text-sm font-medium transition-colors",
+                      entry.none
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-muted",
+                    )}
+                  >
                     <input
                       type="checkbox"
-                      className="size-4 accent-primary"
+                      className="size-5 accent-primary"
                       checked={entry.none}
                       onChange={(e) => update(p.productId, { none: e.target.checked })}
                     />
-                    No hay ninguno
+                    No hay ninguno en {locationName}
                   </label>
                   {!entry.none && (
                     <LotLinesField
@@ -216,10 +267,10 @@ export function DailyCountForm({
                       onChange={(lots) => update(p.productId, { lots, source: "manual" })}
                     />
                   )}
-                </div>
+                </>
               ) : (
-                <div className="flex items-center gap-2">
-                  <Label htmlFor={`count-${p.productId}`}>Contaste</Label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Label htmlFor={`count-${p.productId}`} required>Contaste</Label>
                   <QuantityStepper
                     id={`count-${p.productId}`}
                     value={entry.counted}
@@ -239,9 +290,17 @@ export function DailyCountForm({
           {error}
         </p>
       )}
-      <Button type="submit" size="lg" disabled={isPending} className="self-end">
-        {isPending ? "Guardando..." : "Guardar conteo"}
-      </Button>
+      <div className="flex flex-wrap items-center justify-end gap-4 border-t pt-4">
+        <DraftControls
+          onClear={handleClear}
+          clearDisabled={isPending}
+          draftStatus={draft.status}
+          className="mr-auto"
+        />
+        <Button type="submit" size="lg" disabled={isPending}>
+          {isPending ? "Guardando..." : "Guardar conteo"}
+        </Button>
+      </div>
     </form>
   );
 }

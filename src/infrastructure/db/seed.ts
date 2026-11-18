@@ -42,7 +42,8 @@ async function seedDiscountPolicy() {
 
   await db.insert(discountPolicies).values({
     maxDiscountedUnitsPerSale: 3,
-    maxDiscountedSalesPerDay: 2,
+    // Legacy: the allowance is now units per day (the column above).
+    maxDiscountedSalesPerDay: 0,
     birthdayGiftMaxAmount: "10.00",
     pointsPerSol: "1.00",
     isActive: true,
@@ -81,8 +82,9 @@ async function seedWorkers() {
         nameSource: "manual",
         company: "LATAM Airlines",
         birthDate: "1995-03-15",
-        status: "pending",
-        pendingReason: "new",
+        // Registrations are active at once (no admin approval).
+        status: "active",
+        pendingReason: null,
         registeredBy: admin?.id,
       },
     ])

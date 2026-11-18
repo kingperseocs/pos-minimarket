@@ -30,6 +30,12 @@ export const SUSPICIOUS_CLOCK_MS = 5 * 60 * 1000;
 // schedule is audited as "outside of schedule".
 export const OFF_SCHEDULE_MARGIN_MIN = 30;
 export const DEFAULT_TOLERANCE_MIN = 10;
+// Business rule (clock-in window): "Marcar entrada" opens only this many
+// minutes before the scheduled start (the admin sets it per person and day),
+// and never on a day without schedule — the admin registers that workday.
+// Arriving late is allowed (past the tolerance it counts as late). Hours
+// worked count from the scheduled start, not from an earlier mark.
+export const DEFAULT_EARLY_MIN = 5;
 
 // One working weekday of a person's weekly schedule (0 = Sunday).
 export interface WorkSchedule {
@@ -39,6 +45,8 @@ export interface WorkSchedule {
   startTime: string;
   endTime: string;
   toleranceMin: number;
+  // Minutes before startTime that "Marcar entrada" is enabled.
+  earlyMin: number;
 }
 
 export interface AttendanceRecord {

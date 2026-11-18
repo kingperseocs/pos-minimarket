@@ -4,20 +4,26 @@ import {
   BadgePercentIcon,
   CakeIcon,
   MinusIcon,
+  PercentIcon,
   PlusIcon,
   ShoppingBasketIcon,
   SparklesIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
+import { PointsInfo, type PointsRules } from "@/components/points-info";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { PaymentType } from "@/domain/entities/sale";
 import type { LinePricing, SalePricing } from "@/domain/services/sale-pricing";
 import { formatSoles } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import type { CartItem } from "@/types";
 import { PaymentMethodPicker } from "./payment-method-picker";
+
 import type { AppliedWorker } from "./worker-discount-dialog";
+
+export type PromoOption = { id: number; name: string; percent: number };
 
 export function CartPanel({
   items,
@@ -34,6 +40,14 @@ export function CartPanel({
   onCheckout,
   gift,
   onToggleGift,
+  promoOptions,
+  promo,
+  onSelectPromo,
+  discountUnits,
+  discountBlocked,
+  points,
+  onRedeem,
+  onCancelRedeem,
   showTitle = true,
 }: {
   items: CartItem[];
@@ -54,6 +68,25 @@ export function CartPanel({
   // up to maxAmount can be marked as the gift.
   gift: { maxAmount: number } | null;
   onToggleGift: (productId: number) => void;
+  // Percentages the admin offers (Descuentos) and the one chosen for the
+  // identified worker; only shown once a worker is attached.
+  promoOptions: PromoOption[];
+  promo: PromoOption | null;
+  onSelectPromo: (promo: PromoOption | null) => void;
+  // Units of the purchase the percentage reaches (policy).
+  discountUnits: number;
+  // The worker used up today's discounted purchases.
+  discountBlocked: boolean;
+  // The identified worker's points: balance (minus redemptions waiting to
+  // sync on this till), rules, and what they can take off this sale.
+  points: {
+    balance: number;
+    rules: PointsRules;
+    redeemableSoles: number;
+    redeemablePoints: number;
+  } | null;
+  onRedeem: () => void;
+  onCancelRedeem: () => void;
   // The mobile Sheet already renders its own title.
   showTitle?: boolean;
 }) {
@@ -175,6 +208,13 @@ export function CartPanel({
                 <XIcon />
               </Button>
             </div>
+            <WorkerDiscountPicker
+              options={promoOptions}
+              selected={promo}
+              onSelect={onSelectPromo}
+              units={discountUnits}
+              disabled={discountBlocked || items.length === 0}
+            />
             {gift && !giftChosen && (
               <p className="mt-2 flex items-center gap-1.5 rounded-lg bg-brand-orange/15 px-2 py-1.5 text-xs text-brand-orange">
                 <CakeIcon className="size-3.5 shrink-0" aria-hidden />
@@ -185,6 +225,15 @@ export function CartPanel({
               <p className="mt-2 rounded-lg bg-amber-500/15 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-300">
                 {workerNotice}
               </p>
+            )}
+            {points && (
+              <WorkerPoints
+                points={points}
+                redeemed={pricing.redeemTotal > 0}
+                disabled={items.length === 0}
+                onRedeem={onRedeem}
+                onCancel={onCancelRedeem}
+              />
             )}
           </div>
         ) : (
@@ -214,7 +263,7 @@ export function CartPanel({
         </div>
 
         <div className="space-y-1">
-          {(pricing.discountTotal > 0 || pricing.giftTotal > 0) && (
+          {(pricing.discountTotal > 0 || pricing.giftTotal > 0 || pricing.redeemTotal > 0) && (
             <div className="flex justify-between text-sm text-muted-foreground">
               <span>Subtotal</span>
               <span className="tabular-nums">
@@ -224,7 +273,13 @@ export function CartPanel({
           )}
           {pricing.discountTotal > 0 && (
             <div className="flex justify-between text-sm font-medium text-emerald-700 dark:text-emerald-400">
-              <span>Descuento trabajador</span>
+              <span>
+                {pricing.promo
+                  ? `Descuento trabajador ${pricing.promo.percent}%${
+                      pricing.unitsCapped ? ` (${discountUnits} unid.)` : ""
+                    }`
+                  : "Descuento trabajador"}
+              </span>
               <span className="tabular-nums">
                 −{formatSoles(pricing.discountTotal)}
               </span>
@@ -235,6 +290,23 @@ export function CartPanel({
               <span>Regalo de cumpleaños</span>
               <span className="tabular-nums">
                 −{formatSoles(pricing.giftTotal)}
+              </span>
+            </div>
+          )}
+          {pricing.rounding !== 0 && (
+            <div className="flex justify-between text-sm text-muted-foreground">
+              <span>Redondeo al sol</span>
+              <span className="tabular-nums">
+                {pricing.rounding > 0 ? "+" : "−"}
+                {formatSoles(Math.abs(pricing.rounding))}
+              </span>
+            </div>
+          )}
+          {pricing.redeemTotal > 0 && (
+            <div className="flex justify-between text-sm font-medium text-brand-orange">
+              <span>Canje de {pricing.pointsRedeemed} puntos</span>
+              <span className="tabular-nums">
+                −{formatSoles(pricing.redeemTotal)}
               </span>
             </div>
           )}
@@ -265,6 +337,65 @@ export function CartPanel({
           Cobrar
         </Button>
       </div>
+    </div>
+  );
+}
+
+// The worker's points balance with the "i" explaining the rules, and the
+// button to spend them on this sale (whole soles, as many as they cover).
+function WorkerPoints({
+  points,
+  redeemed,
+  disabled,
+  onRedeem,
+  onCancel,
+}: {
+  points: NonNullable<React.ComponentProps<typeof CartPanel>["points"]>;
+  redeemed: boolean;
+  disabled: boolean;
+  onRedeem: () => void;
+  onCancel: () => void;
+}) {
+  const canRedeem = points.rules.redeemPointsPerSol > 0;
+  const underMinimum = canRedeem && points.balance < points.rules.minRedeemPoints;
+
+  return (
+    <div className="mt-3 space-y-1.5">
+      <div className="flex items-center gap-1 text-xs">
+        <SparklesIcon className="size-3.5 text-brand-orange" aria-hidden />
+        <span className="text-muted-foreground">Puntos:</span>
+        <strong className="tabular-nums">{Math.max(0, points.balance)}</strong>
+        <span className="ml-1">
+          <PointsInfo rules={points.rules} side="top" />
+        </span>
+      </div>
+      {redeemed ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full bg-background"
+          onClick={onCancel}
+        >
+          <XIcon data-icon="inline-start" />
+          No usar puntos
+        </Button>
+      ) : points.redeemableSoles > 0 ? (
+        <Button
+          type="button"
+          size="sm"
+          className="w-full bg-brand-orange text-white hover:bg-brand-orange/90"
+          disabled={disabled}
+          onClick={onRedeem}
+        >
+          <SparklesIcon data-icon="inline-start" />
+          Usar puntos · −{formatSoles(points.redeemableSoles)}
+        </Button>
+      ) : underMinimum ? (
+        <p className="text-xs text-muted-foreground">
+          Podrá canjear desde {points.rules.minRedeemPoints} puntos.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -306,5 +437,83 @@ function LinePrice({ item, line }: { item: CartItem; line: LinePricing | undefin
         <span className="text-muted-foreground">{formatSoles(item.unitPrice)} c/u</span>
       ) : null}
     </p>
+  );
+}
+
+// The percentages the admin set up in Descuentos, as big touch targets. Tap
+// one to apply it, tap it again to remove it.
+function WorkerDiscountPicker({
+  options,
+  selected,
+  onSelect,
+  units,
+  disabled,
+}: {
+  options: PromoOption[];
+  selected: PromoOption | null;
+  onSelect: (promo: PromoOption | null) => void;
+  units: number;
+  disabled: boolean;
+}) {
+  if (options.length === 0) {
+    return (
+      <p className="mt-3 rounded-lg border border-dashed px-2 py-1.5 text-xs text-muted-foreground">
+        No hay descuentos configurados. Pide al administrador que cree uno en
+        Descuentos.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-1.5">
+      <p className="flex items-center gap-1 text-xs font-medium text-emerald-800 dark:text-emerald-300">
+        <PercentIcon className="size-3.5" aria-hidden />
+        Elige el descuento
+        {units > 0 && (
+          <span className="font-normal text-muted-foreground">
+            · primeras {units} unid.
+          </span>
+        )}
+      </p>
+      <div
+        role="group"
+        aria-label="Descuento para el trabajador"
+        className="grid grid-cols-3 gap-1.5 sm:grid-cols-4"
+      >
+        {options.map((option) => {
+          const active = selected?.id === option.id;
+          return (
+            <Button
+              key={option.id}
+              type="button"
+              variant={active ? "default" : "outline"}
+              aria-pressed={active}
+              aria-label={`${active ? "Quitar" : "Aplicar"} ${option.name}, ${option.percent}%`}
+              title={option.name}
+              disabled={disabled && !active}
+              onClick={() => onSelect(active ? null : option)}
+              className={cn(
+                "h-auto min-h-11 flex-col gap-0 px-1 py-1.5 leading-tight",
+                active
+                  ? "bg-emerald-600 text-white ring-2 ring-emerald-600/30 hover:bg-emerald-600/90"
+                  : "bg-background",
+              )}
+            >
+              <span className="text-base font-semibold tabular-nums">
+                {option.percent}%
+              </span>
+              <span
+                className={cn(
+                  "w-full truncate text-[10px] font-normal",
+                  active ? "text-white/85" : "text-muted-foreground",
+                )}
+              >
+                {option.name}
+              </span>
+            </Button>
+          );
+        })}
+      </div>
+    </div>
   );
 }

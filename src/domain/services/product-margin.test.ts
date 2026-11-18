@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { productMargin, profitWithWorkerDiscount } from "./product-margin";
+import { productMargin } from "./product-margin";
 
 describe("productMargin", () => {
   it("bought at 4, sold at 6: earns 2 (50% over cost, 33% of the price)", () => {
@@ -17,15 +17,5 @@ describe("productMargin", () => {
 
   it("is unknown without a purchase price", () => {
     assert.equal(productMargin(6, null), null);
-  });
-});
-
-describe("profitWithWorkerDiscount", () => {
-  it("a S/ 0.60 worker discount on a 6.00 item bought at 4 leaves 1.40", () => {
-    assert.equal(profitWithWorkerDiscount(6, 4, 0.6), 1.4);
-  });
-
-  it("a S/ 3 discount sells it at a loss", () => {
-    assert.equal(profitWithWorkerDiscount(6, 4, 3), -1);
   });
 });

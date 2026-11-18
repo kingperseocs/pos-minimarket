@@ -12,7 +12,14 @@ import { useEffect, useState, useTransition } from "react";
 import { LogoutButton } from "@/components/layout/logout-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { computeLateMinutes, scheduleFor } from "@/domain/services/attendance";
+import { Textarea } from "@/components/ui/textarea";
+import { MAX_CORRECTION_REASON_WORDS, countWords } from "@/application/validation/attendance";
+import {
+  clockInBlockedMessage,
+  clockInWindow,
+  computeLateMinutes,
+  scheduleFor,
+} from "@/domain/services/attendance";
 import { STORE_UTC_OFFSET, storeDateKey } from "@/domain/value-objects/store-time";
 import { useIsOnline } from "@/hooks/use-online-status";
 import { cn } from "@/lib/utils";
@@ -107,8 +114,15 @@ export function ClockInScreen({ onClockedIn }: { onClockedIn: (clockInAt: string
   if (state.forgotten.length > 0) return <ForgottenExitStep />;
 
   const today = storeDateKey(now);
-  const shift = scheduleFor(today, state.schedules);
-  const late = computeLateMinutes(now, shift);
+  // Business rule: enabled from a few minutes before the entrance, never on
+  // a day off (the admin decides both in the schedule).
+  const clockWindow = clockInWindow(now, state.schedules);
+  const shift = clockWindow.shift ?? scheduleFor(today, state.schedules);
+  const late = clockWindow.allowed ? computeLateMinutes(now, shift) : 0;
+  const waitMinutes =
+    !clockWindow.allowed && clockWindow.reason === "too_early"
+      ? Math.ceil((clockWindow.opensAt.getTime() - now.getTime()) / 60_000)
+      : 0;
   const finishedToday =
     state.lastClosed && storeDateKey(new Date(state.lastClosed.clockOutAt)) === today;
 
@@ -140,7 +154,7 @@ export function ClockInScreen({ onClockedIn }: { onClockedIn: (clockInAt: string
             Volver a marcar entrada
           </Button>
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            Cerrar sesión <LogoutButton />
+            <LogoutButton />
           </div>
         </CardContent>
       </Screen>
@@ -168,6 +182,19 @@ export function ClockInScreen({ onClockedIn }: { onClockedIn: (clockInAt: string
           </div>
         </div>
 
+        {!clockWindow.allowed && (
+          <p
+            role="status"
+            className="rounded-md bg-muted px-3 py-2 text-center text-sm text-muted-foreground"
+          >
+            {clockInBlockedMessage(clockWindow)}
+            {waitMinutes > 0 && waitMinutes <= 60 && (
+              <span className="block font-medium tabular-nums">
+                Faltan {waitMinutes} min.
+              </span>
+            )}
+          </p>
+        )}
         {late > 0 && (
           <p className="rounded-md bg-amber-500/10 px-3 py-2 text-center text-sm text-amber-800 dark:text-amber-300">
             Llegas {late} min tarde. Quedará registrado.
@@ -185,9 +212,19 @@ export function ClockInScreen({ onClockedIn }: { onClockedIn: (clockInAt: string
           </p>
         )}
 
-        <Button size="lg" className="h-16 text-lg" disabled={isPending} onClick={handleClockIn}>
+        <Button
+          size="lg"
+          className="h-16 text-lg"
+          disabled={isPending || !clockWindow.allowed}
+          onClick={handleClockIn}
+        >
           {isPending ? "Marcando..." : "MARCAR ENTRADA"}
         </Button>
+        {!clockWindow.allowed && clockWindow.reason === "day_off" && (
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <LogoutButton />
+          </div>
+        )}
         <p className="text-center text-xs text-muted-foreground">
           Marca solo tú. La hora la pone el sistema y no se puede cambiar.
         </p>
@@ -195,12 +232,6 @@ export function ClockInScreen({ onClockedIn }: { onClockedIn: (clockInAt: string
     </Screen>
   );
 }
-
-const REASONS = [
-  "Me olvidé de marcar la salida",
-  "Se fue la luz o el internet",
-  "El equipo no tenía batería",
-];
 
 const MINUTES_IN_DAY = 24 * 60;
 const toHhmm = (minutes: number) =>
@@ -244,7 +275,9 @@ function ForgottenExitStep() {
     const [h, m] = storeHhmm(suggested).split(":").map(Number);
     return h * 60 + m;
   });
-  const [reason, setReason] = useState(REASONS[0]);
+  const [reason, setReason] = useState("");
+  const words = countWords(reason);
+  const tooLong = words > MAX_CORRECTION_REASON_WORDS;
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -258,13 +291,16 @@ function ForgottenExitStep() {
   function handleSend() {
     const exit = exitDate();
     if (exit > new Date()) return setError("Esa hora todavía no llega. Revisa la hora.");
+    // Same rules as the server: a queued request it would reject could never sync.
+    if (reason.trim().length < 5) return setError("Cuéntanos qué pasó (al menos unas palabras).");
+    if (tooLong) return setError(`Máximo ${MAX_CORRECTION_REASON_WORDS} palabras.`);
     setError(null);
     startTransition(async () => {
       try {
         await requestCorrection(
           forgotten.uuid,
           `${storeDateKey(exit)}T${storeHhmm(exit)}:00${STORE_UTC_OFFSET}`,
-          reason,
+          reason.trim(),
         );
       } catch (e) {
         setError((e as Error).message);
@@ -285,17 +321,28 @@ function ForgottenExitStep() {
       <CardContent className="flex flex-col gap-4">
         <TimeStepper value={minutes} onChange={setMinutes} />
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium">¿Qué pasó?</span>
-          {REASONS.map((option) => (
-            <Button
-              key={option}
-              variant={reason === option ? "secondary" : "outline"}
-              className={cn("justify-start", reason === option && "ring-2 ring-primary")}
-              onClick={() => setReason(option)}
-            >
-              {option}
-            </Button>
-          ))}
+          <label htmlFor="forgotten-exit-reason" className="text-sm font-medium">
+            ¿Qué pasó?
+          </label>
+          <Textarea
+            id="forgotten-exit-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Ej.: Se fue la luz y no pude marcar la salida antes de irme."
+            rows={4}
+            aria-invalid={tooLong || undefined}
+            aria-describedby="forgotten-exit-reason-count"
+            className="max-h-48 min-h-24 resize-none"
+          />
+          <span
+            id="forgotten-exit-reason-count"
+            className={cn(
+              "self-end text-xs tabular-nums",
+              tooLong ? "font-medium text-destructive" : "text-muted-foreground",
+            )}
+          >
+            {words} / {MAX_CORRECTION_REASON_WORDS} palabras
+          </span>
         </div>
         <p className="text-xs text-muted-foreground">
           El administrador revisará tu pedido. Hasta que lo apruebe, ese día figura sin salida.
@@ -305,7 +352,11 @@ function ForgottenExitStep() {
             {error}
           </p>
         )}
-        <Button size="lg" disabled={isPending} onClick={handleSend}>
+        <Button
+          size="lg"
+          disabled={isPending || reason.trim().length < 5 || tooLong}
+          onClick={handleSend}
+        >
           {isPending ? "Enviando..." : `Salí a las ${toHhmm(minutes)} · Enviar`}
         </Button>
         <Button

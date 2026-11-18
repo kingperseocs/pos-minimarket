@@ -35,9 +35,12 @@ function detectFormat(bytes: Uint8Array) {
   });
 }
 
-export async function uploadProductImageUseCase(
+// Validates the bytes (size, real format) and stores them under `prefix`
+// with a random, never-reused key.
+export async function storeUploadedImage(
   storage: ImageStorage,
   bytes: Uint8Array,
+  prefix: string,
 ) {
   if (bytes.byteLength === 0) {
     throw new InvalidImageError("El archivo está vacío");
@@ -52,8 +55,12 @@ export async function uploadProductImageUseCase(
   }
 
   // Random, never-reused keys: the URL can be cached as immutable forever.
-  const key = `${PRODUCT_IMAGE_PREFIX}${crypto.randomUUID()}.${format.ext}`;
+  const key = `${prefix}${crypto.randomUUID()}.${format.ext}`;
   await storage.put(key, bytes, format.mime);
 
   return { key, url: `${PRODUCT_IMAGE_URL_BASE}${key}` };
+}
+
+export function uploadProductImageUseCase(storage: ImageStorage, bytes: Uint8Array) {
+  return storeUploadedImage(storage, bytes, PRODUCT_IMAGE_PREFIX);
 }

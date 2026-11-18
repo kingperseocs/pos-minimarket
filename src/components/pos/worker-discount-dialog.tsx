@@ -33,11 +33,13 @@ import {
   findWorkerLocally,
   getWorkerSnapshot,
   localDiscountUsage,
+  localPointsBalance,
   refreshWorkerSnapshot,
 } from "@/infrastructure/offline/worker-cache";
 import { submitWorkerOp, WorkerOpRejectedError } from "@/infrastructure/offline/worker-ops";
 import type { CachedPolicy, CachedWorker } from "@/infrastructure/offline/types";
 import { formatSoles } from "@/lib/money";
+import { discountUnitsLeft, unitsPerDayOf } from "@/domain/services/sale-pricing";
 import { cn } from "@/lib/utils";
 
 // The worker identified at the till, attached to the current sale only.
@@ -131,7 +133,7 @@ export function WorkerDiscountDialog({
           name: "message",
           tone: "warning",
           title: "Registro aún sin enviar",
-          body: "Este DNI se registró en esta tablet sin internet. Cuando vuelva la conexión se enviará, y el administrador deberá aprobarlo. Mientras tanto, la compra va sin descuento.",
+          body: "Este DNI se registró en esta tablet sin internet. Se enviará cuando vuelva la conexión y desde ahí ya tiene descuento. Esta compra va sin descuento.",
         });
         return;
       }
@@ -151,16 +153,9 @@ export function WorkerDiscountDialog({
       }
 
       const worker = result.worker;
-      if (worker.status === "pending") {
-        goTo({
-          name: "message",
-          tone: "warning",
-          title: `${worker.fullName} está pendiente de aprobación`,
-          body: "El administrador aún no aprueba su registro. Mientras tanto, sus compras van sin descuento.",
-        });
-        return;
-      }
-      if (worker.status !== "active") {
+      // "pending" only exists on records from before registrations were
+      // active at once; treat them as active.
+      if (worker.status !== "active" && worker.status !== "pending") {
         goTo({
           name: "message",
           tone: "danger",
@@ -181,7 +176,7 @@ export function WorkerDiscountDialog({
 
       goTo({
         name: "confirm",
-        worker,
+        worker: { ...worker, pointsBalance: await localPointsBalance(worker) },
         policy: snapshot.policy,
         usage: await localDiscountUsage(worker),
       });
@@ -269,16 +264,18 @@ export function WorkerDiscountDialog({
           occurredAt: new Date().toISOString(),
         },
       });
-      if (result === "sent") void refreshWorkerSnapshot({ force: true });
+      if (result === "sent") {
+        // Active at once: fetch it and go straight to applying the discount.
+        await refreshWorkerSnapshot({ force: true });
+        setBusy(false);
+        await searchDni(dni);
+        return;
+      }
       goTo({
         name: "message",
         tone: "success",
-        title: result === "sent" ? "Registro enviado" : "Registro guardado en la tablet",
-        body:
-          (result === "sent"
-            ? "El administrador debe aprobar al trabajador."
-            : "No hay internet: el registro se enviará automáticamente cuando vuelva la conexión. Luego el administrador debe aprobarlo.") +
-          " Hasta entonces, sus compras van sin descuento.",
+        title: "Registro guardado en la tablet",
+        body: "No hay internet: el registro se enviará automáticamente cuando vuelva la conexión, y desde ahí ya tiene descuento. Esta compra va sin descuento.",
       });
     } catch (error) {
       setFormError(
@@ -492,7 +489,8 @@ function ConfirmWorker({
   onApply: () => void;
   onBack: () => void;
 }) {
-  const purchasesLeft = Math.max(0, policy.maxDiscountedSalesPerDay - usage.discountedSalesToday);
+  const perDay = unitsPerDayOf(policy);
+  const unitsLeft = discountUnitsLeft(perDay, usage.discountedUnitsToday ?? 0);
   const birthday = birthdayGiftAvailable({
     birthDate: worker.birthDate,
     giftUsedThisYear: usage.giftUsedThisYear,
@@ -524,17 +522,15 @@ function ConfirmWorker({
           Márcalo con 🎂 en la cesta.
         </Notice>
       )}
-      {purchasesLeft === 0 ? (
-        <Notice tone="warning" icon={AlertTriangleIcon} title="Ya usó sus descuentos de hoy">
-          Sus {policy.maxDiscountedSalesPerDay} compras con descuento del día ya se usaron.
-          Esta compra va a precio normal, pero suma puntos.
+      {unitsLeft === 0 ? (
+        <Notice tone="warning" icon={AlertTriangleIcon} title="Ya usó su descuento de hoy">
+          Su compra con descuento del día ya se hizo. Esta compra va a precio normal, pero suma
+          puntos.
         </Notice>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Descuento en las primeras {policy.maxDiscountedUnitsPerSale} unidades ·{" "}
-          {purchasesLeft === 1
-            ? "última compra con descuento de hoy"
-            : `le quedan ${purchasesLeft} compras con descuento hoy`}
+          Descuento en <strong className="text-foreground">{perDay} productos</strong> de una
+          compra de {perDay} o más · 1 compra con descuento al día.
         </p>
       )}
 

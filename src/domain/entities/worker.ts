@@ -57,10 +57,10 @@ export interface Worker {
   createdAt: Date;
 }
 
-// What the worker already used: discounted purchases today (daily cap) and
-// whether the birthday gift was given this year (once a year).
+// What the worker already used: discounted units today (the daily allowance)
+// and whether the birthday gift was given this year (once a year).
 export interface WorkerDiscountUsage {
-  discountedSalesToday: number;
+  discountedUnitsToday: number;
   giftUsedThisYear: boolean;
 }
 
@@ -73,5 +73,8 @@ export interface WorkerPurchase {
   giftTotal: number;
   total: number;
   pointsEarned: number;
+  // Points spent on the purchase and the soles they took off.
+  pointsRedeemed: number;
+  redeemTotal: number;
   auditFlags: string[];
 }

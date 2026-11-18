@@ -4,7 +4,8 @@ import { ClipboardListIcon, HistoryIcon, SearchIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { createDialogHandle } from "@/components/ui/dialog";
+import { DropdownMenuItem, DropdownMenuLinkItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { usePagination } from "@/hooks/use-pagination";
@@ -12,6 +13,7 @@ import type { StockLot } from "@/domain/entities/inventory";
 import { cn } from "@/lib/utils";
 import { DataTable, ID_COLUMN, IdCell } from "../data-table";
 import { DataTablePagination } from "../data-table-pagination";
+import { RowActions } from "../row-actions";
 import { type LocationOption, StockCountDialog } from "./stock-count-dialog";
 
 export type InventoryRow = {
@@ -127,35 +129,44 @@ export function InventoryTable({
               )}
             </TableCell>
             <TableCell>
-              <div className="flex justify-end gap-2">
-                <StockCountDialog
-                  productId={row.productId}
-                  productName={row.productName}
-                  byLocation={row.byLocation}
-                  locations={locations}
-                  tracksExpiry={row.tracksExpiry}
-                  lots={row.lots}
-                  trigger={
-                    <Button size="sm" variant="outline">
-                      <ClipboardListIcon data-icon="inline-start" />
-                      Contar
-                    </Button>
-                  }
-                />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  nativeButton={false}
-                  render={<Link href={`/admin/inventory/${row.productId}`} />}
-                >
-                  <HistoryIcon data-icon="inline-start" />
-                  Kardex
-                </Button>
-              </div>
+              <InventoryActions row={row} locations={locations} />
             </TableCell>
           </TableRow>
         ))}
       </DataTable>
     </div>
+  );
+}
+
+function InventoryActions({
+  row,
+  locations,
+}: {
+  row: InventoryRow;
+  locations: LocationOption[];
+}) {
+  const [countDialog] = useState(createDialogHandle);
+  return (
+    <>
+      <RowActions label={row.productName}>
+        <DropdownMenuItem onClick={() => countDialog.open(null)}>
+          <ClipboardListIcon />
+          Contar
+        </DropdownMenuItem>
+        <DropdownMenuLinkItem render={<Link href={`/admin/inventory/${row.productId}`} />}>
+          <HistoryIcon />
+          Ver kardex
+        </DropdownMenuLinkItem>
+      </RowActions>
+      <StockCountDialog
+        productId={row.productId}
+        productName={row.productName}
+        byLocation={row.byLocation}
+        locations={locations}
+        tracksExpiry={row.tracksExpiry}
+        lots={row.lots}
+        handle={countDialog}
+      />
+    </>
   );
 }

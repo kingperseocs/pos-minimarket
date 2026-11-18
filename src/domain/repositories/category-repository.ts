@@ -6,6 +6,7 @@ import type {
 
 export interface CategoryData {
   name: string;
+  parentId: number | null;
   icon: CategoryIcon | null;
   sortOrder: number;
   tracksExpiry: boolean;
@@ -18,6 +19,8 @@ export interface CategoryRepository {
   findById(id: number): Promise<Category | null>;
   // Case-insensitive; excludeId lets an update keep its own name.
   existsByName(name: string, excludeId?: number): Promise<boolean>;
+  // True when some category (active or not) is a subcategory of it.
+  hasSubcategories(id: number): Promise<boolean>;
   create(data: CategoryData): Promise<void>;
   update(id: number, data: CategoryData): Promise<void>;
   setActive(id: number, isActive: boolean): Promise<void>;

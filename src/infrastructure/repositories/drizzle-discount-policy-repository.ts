@@ -12,9 +12,11 @@ type PolicyRow = typeof discountPolicies.$inferSelect;
 function toPolicy(row: PolicyRow, createdByName: string | null = null): DiscountPolicy {
   return {
     id: row.id,
-    maxDiscountedUnitsPerSale: row.maxDiscountedUnitsPerSale,
-    maxDiscountedSalesPerDay: row.maxDiscountedSalesPerDay,
+    // Stored in the old per-sale column; it now means units per day.
+    maxDiscountedUnitsPerDay: row.maxDiscountedUnitsPerSale,
     pointsPerSol: Number(row.pointsPerSol),
+    redeemPointsPerSol: row.redeemPointsPerSol,
+    minRedeemPoints: row.minRedeemPoints,
     birthdayGiftMaxAmount: Number(row.birthdayGiftMaxAmount),
     isActive: row.isActive,
     createdById: row.createdBy,
@@ -63,9 +65,12 @@ export class DrizzleDiscountPolicyRepository implements DiscountPolicyRepository
       const [row] = await tx
         .insert(discountPolicies)
         .values({
-          maxDiscountedUnitsPerSale: data.maxDiscountedUnitsPerSale,
-          maxDiscountedSalesPerDay: data.maxDiscountedSalesPerDay,
+          maxDiscountedUnitsPerSale: data.maxDiscountedUnitsPerDay,
+          // Legacy: the daily allowance is in units now, not purchases.
+          maxDiscountedSalesPerDay: 0,
           pointsPerSol: data.pointsPerSol.toFixed(2),
+          redeemPointsPerSol: data.redeemPointsPerSol,
+          minRedeemPoints: data.minRedeemPoints,
           birthdayGiftMaxAmount: data.birthdayGiftMaxAmount.toFixed(2),
           isActive: true,
           createdBy: actorId,

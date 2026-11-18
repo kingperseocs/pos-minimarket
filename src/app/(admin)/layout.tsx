@@ -1,5 +1,8 @@
 import { cookies } from "next/headers";
+import { Suspense } from "react";
+import { GoalHeaderWidget } from "@/components/goals/goal-header-widget";
 import { AdminSidebar } from "@/components/layout/admin-sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AppFooter } from "@/components/layout/app-footer";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -33,9 +36,16 @@ export default async function AdminLayout({
               orientation="vertical"
               className="mr-2 data-[orientation=vertical]:h-4"
             />
-            <span className="text-sm text-muted-foreground">
-              Panel de administración
+            <span className="truncate text-sm text-muted-foreground">
+              <span className="hidden sm:inline">Panel de administración</span>
+              <span className="sm:hidden">Admin</span>
             </span>
+            {/* Monthly sales goal, visible from every admin page. */}
+            <div className="ml-auto flex min-w-0 items-center">
+              <Suspense fallback={<Skeleton className="h-9 w-20 rounded-full md:w-48 lg:w-72" />}>
+                <GoalHeaderWidget />
+              </Suspense>
+            </div>
           </header>
           <div className="flex-1 p-4 md:p-6">{children}</div>
           <AppFooter />

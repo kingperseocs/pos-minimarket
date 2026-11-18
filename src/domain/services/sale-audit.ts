@@ -3,7 +3,7 @@ import type { ProductCatalogEntry } from "../entities/product";
 import type { WorkerStatus } from "../entities/worker";
 import { round2 } from "../value-objects/money";
 import { isBirthdayAt } from "./birthday";
-import { maxSaleDiscount } from "./sale-pricing";
+import { discountUnitsLeft, maxSaleDiscount, promoLineDiscount } from "./sale-pricing";
 
 const CENT = 0.01;
 
@@ -26,12 +26,14 @@ export interface SaleAuditContext {
   soldAt: Date;
   worker: { status: WorkerStatus; birthDate: string | null } | null;
   policy: {
-    maxDiscountedUnitsPerSale: number;
-    maxDiscountedSalesPerDay: number;
+    maxDiscountedUnitsPerDay: number;
     birthdayGiftMaxAmount: number;
   } | null;
   // Usage *before* this sale.
-  usage: { discountedSalesToday: number; giftUsedThisYear: boolean } | null;
+  usage: { discountedUnitsToday: number; giftUsedThisYear: boolean } | null;
+  // Percentage the cashier chose for the worker, with the percent stored on
+  // the server (never the client's).
+  promo?: { percent: number } | null;
 }
 
 // Pure: decides which anomalies a sale has. Never throws — a sale is always
@@ -51,7 +53,8 @@ export function evaluateSaleFlags(ctx: SaleAuditContext): AuditFlag[] {
   const gifts = ctx.lines.filter((line) => line.isGift);
 
   if (!ctx.worker) {
-    if (discount > 0) flags.add("DISCOUNT_MISMATCH");
+    // Only an identified worker may get a discount (or name a percentage).
+    if (discount > 0 || ctx.promo) flags.add("DISCOUNT_MISMATCH");
     if (gifts.length > 0) flags.add("GIFT_NOT_BIRTHDAY");
     return [...flags];
   }
@@ -59,39 +62,43 @@ export function evaluateSaleFlags(ctx: SaleAuditContext): AuditFlag[] {
   if (ctx.worker.status !== "active") flags.add("WORKER_NOT_ACTIVE");
 
   if (discount > 0) {
-    // Without a policy no worker discount is allowed at all. Otherwise each
-    // line may take at most its product's soles per unit (checked per line,
-    // so a big discount on one product can't hide behind small ones), and
-    // the sale at most its best `maxDiscountedUnitsPerSale` units.
-    const unitDiscount = (productId: number) =>
-      ctx.catalog.get(productId)?.workerDiscountAmount ?? 0;
+    // The discount is the chosen percentage: without one (or without a
+    // policy) none is allowed. Each line may take at most the percentage of
+    // its units (checked per line, so an inflated line can't hide behind the
+    // others), and the sale at most its best units still left of the
+    // worker's daily allowance.
+    const percent = ctx.promo?.percent ?? 0;
+    const unitDiscount = (unitPrice: number) =>
+      Math.min(promoLineDiscount(unitPrice, percent), round2(unitPrice));
     const overLine =
       !ctx.policy ||
+      percent <= 0 ||
       ctx.lines.some((line) => {
         if (line.isGift) return line.discountAmount > 0;
-        const max = round2(Math.min(unitDiscount(line.productId), line.unitPrice) * line.quantity);
+        const max = round2(unitDiscount(line.unitPrice) * line.quantity);
         return line.discountAmount - max >= CENT;
       });
     if (overLine) {
       flags.add("DISCOUNT_MISMATCH");
     } else if (ctx.policy) {
+      const unitsLeft = discountUnitsLeft(
+        ctx.policy.maxDiscountedUnitsPerDay,
+        ctx.usage?.discountedUnitsToday ?? 0,
+      );
       const max = maxSaleDiscount(
         ctx.lines.map((line) => ({
           quantity: line.quantity,
           isGift: line.isGift,
-          unitDiscount: Math.min(unitDiscount(line.productId), line.unitPrice),
+          unitDiscount: unitDiscount(line.unitPrice),
         })),
-        ctx.policy.maxDiscountedUnitsPerSale,
+        unitsLeft,
       );
-      if (discount - max >= CENT) flags.add("UNITS_LIMIT_EXCEEDED");
-    }
-
-    if (
-      ctx.policy &&
-      ctx.usage &&
-      ctx.usage.discountedSalesToday >= ctx.policy.maxDiscountedSalesPerDay
-    ) {
-      flags.add("DAILY_LIMIT_EXCEEDED");
+      const units = ctx.lines.reduce((sum, line) => sum + (line.isGift ? 0 : line.quantity), 0);
+      // Today's discounted purchase already used, fewer products than the
+      // minimum, or more discounted units than allowed.
+      if (unitsLeft === 0) flags.add("DAILY_LIMIT_EXCEEDED");
+      else if (units < ctx.policy.maxDiscountedUnitsPerDay) flags.add("DISCOUNT_BELOW_MINIMUM");
+      else if (discount - max >= CENT) flags.add("UNITS_LIMIT_EXCEEDED");
     }
   }
 

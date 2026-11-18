@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_EARLY_MIN } from "@/domain/entities/attendance";
 import { idSchema, idWithMessage } from "./id";
 
 const blankToNull = (value: unknown) =>
@@ -14,6 +15,23 @@ const reason = z
   .trim()
   .min(5, "Escribe el motivo (ej. Se me olvidó marcar la salida)")
   .max(200);
+
+// Free-text reason the person writes when asking to fix a forgotten mark.
+export const MAX_CORRECTION_REASON_WORDS = 200;
+// Generous character cap so a 200-word text always fits.
+const MAX_CORRECTION_REASON_CHARS = 2000;
+export const countWords = (text: string) =>
+  text.trim().split(/\s+/).filter(Boolean).length;
+
+const correctionReason = z
+  .string()
+  .trim()
+  .min(5, "Cuéntanos qué pasó (al menos unas palabras)")
+  .max(MAX_CORRECTION_REASON_CHARS, "El motivo es demasiado largo")
+  .refine(
+    (text) => countWords(text) <= MAX_CORRECTION_REASON_WORDS,
+    `Máximo ${MAX_CORRECTION_REASON_WORDS} palabras`,
+  );
 
 // A mark made on the device: when it was pressed and when it was sent, so
 // the server can tell how wrong the device clock is.
@@ -38,7 +56,7 @@ export const requestCorrectionSchema = z.object({
   attendanceUuid: z.uuid(),
   field: z.enum(["clock_in", "clock_out"]),
   newValue: z.iso.datetime({ offset: true }),
-  reason,
+  reason: correctionReason,
 });
 
 export const reviewCorrectionSchema = z.object({
@@ -74,6 +92,13 @@ export const scheduleDaySchema = z
       .int()
       .min(0, "La tolerancia no puede ser negativa")
       .max(120, "La tolerancia máxima es 120 minutos"),
+    // "Marcar entrada" opens this many minutes before the entrance.
+    earlyMin: z.coerce
+      .number("Escribe desde cuántos minutos antes se puede marcar")
+      .int()
+      .min(0, "Los minutos antes no pueden ser negativos")
+      .max(120, "Máximo 120 minutos antes")
+      .default(DEFAULT_EARLY_MIN),
   })
   .refine((day) => day.startTime !== day.endTime, {
     message: "La entrada y la salida no pueden ser a la misma hora",

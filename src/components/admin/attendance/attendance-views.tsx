@@ -347,7 +347,12 @@ export async function CorrectionsView() {
           <TableCell className="text-sm tabular-nums">
             {view.fieldLabel}: {view.oldValue} → <span className="font-medium">{view.newValue}</span>
           </TableCell>
-          <TableCell className="max-w-56 text-sm text-muted-foreground">{c.reason}</TableCell>
+          <TableCell className="max-w-56 text-sm whitespace-normal text-muted-foreground">
+            {/* Long free-text reasons: 3 lines here, full text in the review dialog. */}
+            <p className="line-clamp-3" title={c.reason}>
+              {c.reason}
+            </p>
+          </TableCell>
           <TableCell className="text-sm">
             {c.requestedByName}
             <div className="text-xs text-muted-foreground">{dateTimeFormat.format(c.createdAt)}</div>

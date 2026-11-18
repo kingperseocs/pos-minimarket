@@ -1,18 +1,19 @@
 "use client";
 
+import { RotateCcwIcon, Trash2Icon } from "lucide-react";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { setUserActive } from "@/actions/users";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { usePagination } from "@/hooks/use-pagination";
 import { USER_ROLE_LABELS, type UserRole } from "@/domain/entities/user";
 import { initials } from "@/lib/initials";
 import { DataTable, ID_COLUMN, IdCell } from "./data-table";
 import { DataTablePagination } from "./data-table-pagination";
-import { DeactivateButton } from "./deactivate-button";
+import { RowActions } from "./row-actions";
 import { StatusBadge } from "./status-badge";
 
 type User = {
@@ -83,23 +84,20 @@ export function UserTable({ users }: { users: User[] }) {
           <TableCell>
             <StatusBadge active={user.isActive} />
           </TableCell>
-          <TableCell className="text-right">
-            {user.isActive ? (
-              <DeactivateButton
-                label={`Desactivar a ${user.name}`}
-                disabled={isPending}
-                onClick={() => handleToggle(user)}
-              />
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={isPending}
-                onClick={() => handleToggle(user)}
-              >
-                Activar
-              </Button>
-            )}
+          <TableCell>
+            <RowActions label={user.name} disabled={isPending}>
+              {user.isActive ? (
+                <DropdownMenuItem variant="destructive" onClick={() => handleToggle(user)}>
+                  <Trash2Icon />
+                  Desactivar
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={() => handleToggle(user)}>
+                  <RotateCcwIcon />
+                  Activar
+                </DropdownMenuItem>
+              )}
+            </RowActions>
           </TableCell>
         </TableRow>
       ))}

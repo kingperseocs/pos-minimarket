@@ -15,7 +15,6 @@ export function useCart() {
     id: number;
     name: string;
     priceSale: number;
-    workerDiscountAmount: number;
   }, source: CaptureSource = "manual") {
     setItems((prev) => {
       const existing = prev.find((item) => item.productId === product.id);
@@ -37,7 +36,6 @@ export function useCart() {
           name: product.name,
           unitPrice: product.priceSale,
           quantity: 1,
-          workerDiscountAmount: product.workerDiscountAmount,
           isGift: false,
           captureSource: source,
         },

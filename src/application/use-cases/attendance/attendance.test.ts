@@ -6,7 +6,7 @@ import type {
   WorkSchedule,
 } from "@/domain/entities/attendance";
 import type { AuditEventInput } from "@/domain/entities/audit";
-import { ValidationError } from "@/domain/errors";
+import { ClockInNotAllowedError, ValidationError } from "@/domain/errors";
 import type {
   AttendanceRepository,
   NewAttendanceCorrection,
@@ -107,6 +107,7 @@ const schedule: WorkSchedule[] = [1, 2, 3, 4, 5, 6].map((weekday) => ({
   startTime: "07:00",
   endTime: "15:00",
   toleranceMin: 10,
+  earlyMin: 5,
 }));
 
 let store: ReturnType<typeof fakeAttendance>;
@@ -170,6 +171,42 @@ describe("clockInUseCase", () => {
     await clockInUseCase(deps, punch(UUID_B, now), juan);
     assert.equal(store.records[0].status, "missing_clock_out");
     assert.equal(store.records[1].status, "open");
+  });
+});
+
+describe("clock-in window", () => {
+  it("marking from home an hour early is rejected and audited", async () => {
+    now = lima(MONDAY, "06:00");
+    await assert.rejects(clockInUseCase(deps, punch(UUID_A, now), juan), ClockInNotAllowedError);
+    assert.equal(store.records.length, 0);
+    assert.equal(audit[0].type, "attendance_clock_in_blocked");
+  });
+
+  it("within the early window it's accepted and on time", async () => {
+    now = lima(MONDAY, "06:56");
+    await clockInUseCase(deps, punch(UUID_A, now), juan);
+    assert.equal(store.records[0].lateMinutes, 0);
+  });
+
+  it("a day off can't be marked", async () => {
+    now = lima("2026-10-04", "09:00");
+    await assert.rejects(clockInUseCase(deps, punch(UUID_A, now), juan), ClockInNotAllowedError);
+  });
+
+  it("an early mark made offline is kept but flagged for the admin", async () => {
+    now = lima(MONDAY, "07:30");
+    // Marked 06:00 without internet, synced at 07:30.
+    const mark = { ...punch(UUID_A, lima(MONDAY, "06:00"), false), sentAt: now.toISOString() };
+    await clockInUseCase(deps, mark, juan);
+    assert.equal(store.records.length, 1);
+    assert.equal(store.records[0].timeSuspicious, true);
+    assert.ok(audit.some((e) => e.type === "attendance_clock_in_outside_window"));
+  });
+
+  it("the admin is never blocked", async () => {
+    now = lima(MONDAY, "05:00");
+    await clockInUseCase(deps, punch(UUID_A, now), admin);
+    assert.equal(store.records.length, 1);
   });
 });
 
