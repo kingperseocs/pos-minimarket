@@ -23,14 +23,3 @@ export function productMargin(
     marginPercent: Math.round((profit / priceSale) * 100),
   };
 }
-
-// What is left when an airport worker buys it with their discount.
-export function profitWithWorkerDiscount(
-  priceSale: number,
-  priceCost: number | null,
-  // Soles off each unit.
-  workerDiscountAmount: number,
-): number | null {
-  if (priceCost === null || priceCost <= 0) return null;
-  return round2(priceSale - workerDiscountAmount - priceCost);
-}

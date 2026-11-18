@@ -18,6 +18,9 @@ export function ProductImagePlaceholder({
       <img
         src={src}
         alt={alt}
+        // Long product lists: only the photos near the screen are fetched.
+        loading="lazy"
+        decoding="async"
         className={cn("aspect-4/3 w-full rounded-md object-cover", className)}
       />
     );

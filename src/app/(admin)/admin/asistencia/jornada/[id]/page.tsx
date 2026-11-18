@@ -121,7 +121,7 @@ export default async function AttendanceDetailPage({
   timeline.sort((a, b) => a.at.getTime() - b.at.getTime());
 
   const pending = corrections.filter((c) => c.status === "pending");
-  const worked = record.clockOutAt ? workedMinutes(record.clockInAt, record.clockOutAt) : null;
+  const worked = record.clockOutAt ? workedMinutes(record.clockInAt, record.clockOutAt, record.scheduledStart) : null;
 
   return (
     <div className="flex flex-col gap-6">

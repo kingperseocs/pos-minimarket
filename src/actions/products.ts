@@ -18,6 +18,7 @@ import {
 } from "@/infrastructure/repositories";
 import { imageStorage } from "@/infrastructure/storage";
 import { runAction } from "./action-result";
+import { revalidateCatalogViews } from "./revalidate";
 
 // The admin panel (the admin role has every permission).
 const requireAdmin = () => requirePermission("manage");
@@ -34,9 +35,7 @@ export async function createProduct(input: unknown) {
       input,
     );
 
-    revalidatePath("/admin/products");
-    revalidatePath("/admin/categories");
-    revalidatePath("/pos");
+    revalidateCatalogViews();
   });
 }
 
@@ -53,9 +52,7 @@ export async function updateProduct(input: unknown) {
       input,
     );
 
-    revalidatePath("/admin/products");
-    revalidatePath("/admin/categories");
-    revalidatePath("/pos");
+    revalidateCatalogViews();
   });
 }
 
@@ -64,18 +61,14 @@ export async function deactivateProduct(id: number) {
   await requireAdmin();
   await setProductActiveUseCase(productRepository, idSchema.parse(id), false);
 
-  revalidatePath("/admin/products");
-  revalidatePath("/admin/categories");
-  revalidatePath("/pos");
+  revalidateCatalogViews();
 }
 
 export async function reactivateProduct(id: number) {
   await requireAdmin();
   await setProductActiveUseCase(productRepository, idSchema.parse(id), true);
 
-  revalidatePath("/admin/products");
-  revalidatePath("/admin/categories");
-  revalidatePath("/pos");
+  revalidateCatalogViews();
 }
 
 const presentationRepos = {

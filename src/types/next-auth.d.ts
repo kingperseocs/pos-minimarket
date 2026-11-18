@@ -15,6 +15,9 @@ declare module "next-auth" {
   }
 }
 
+// next-auth/jwt only re-exports this interface (`export *`), which can't be
+// augmented: the original module is. With pnpm it resolves only because
+// @auth/core is a direct dependency (pinned to next-auth's version).
 declare module "@auth/core/jwt" {
   interface JWT {
     id: number;

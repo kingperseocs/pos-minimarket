@@ -4,6 +4,11 @@ import type { ImageStorage } from "@/domain/repositories/image-storage";
 import type { PresentationRepository } from "@/domain/repositories/presentation-repository";
 import type { ProductRepository } from "@/domain/repositories/product-repository";
 import { productUpdateSchema } from "@/application/validation/product";
+import {
+  checkPackaging,
+  createPackaging,
+  ensureCanAddPackaging,
+} from "./create-packaging";
 import { ensureBarcodeFree } from "./ensure-barcode";
 import { ensureAssignableCategory } from "./ensure-category";
 import { imageKeyFromUrl } from "./upload-product-image";
@@ -26,8 +31,14 @@ export async function updateProductUseCase(
     previous.categoryId,
   );
   await ensureBarcodeFree(repos, data.barcode, { productId: data.id });
+  const { packaging, ...product } = data;
+  if (packaging) {
+    checkPackaging(packaging);
+    await ensureCanAddPackaging(repos.presentations, data.id);
+  }
 
-  await repos.products.update(data);
+  await repos.products.update(product);
+  if (packaging) await createPackaging(repos, data.id, packaging);
 
   // imageUrl undefined = "unchanged"; null or a new URL replaces the photo.
   const replaced =

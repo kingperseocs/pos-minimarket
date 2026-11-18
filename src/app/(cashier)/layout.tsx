@@ -6,6 +6,10 @@ import { initialAttendance } from "@/components/attendance/initial-state";
 import { AppFooter } from "@/components/layout/app-footer";
 import { AreaLinks } from "@/components/layout/area-links";
 import { LogoutButton } from "@/components/layout/logout-button";
+import { CloseShiftButton } from "@/components/pos/close-shift-button";
+import { getCashierGoalProgressUseCase } from "@/application/use-cases/goals/goal-progress";
+import { GoalChip } from "@/components/goals/goal-chip";
+import { goalDeps } from "@/infrastructure/deps";
 import { requirePagePermission } from "@/infrastructure/auth/guards";
 
 export default async function CashierLayout({
@@ -14,7 +18,11 @@ export default async function CashierLayout({
   children: React.ReactNode;
 }) {
   const user = await requirePagePermission("sell");
-  const attendance = await initialAttendance(user);
+  const [attendance, goal] = await Promise.all([
+    initialAttendance(user),
+    // The team's monthly goal: only the percentage, no sales amounts.
+    getCashierGoalProgressUseCase(goalDeps),
+  ]);
 
   return (
     <AttendanceProvider
@@ -24,20 +32,25 @@ export default async function CashierLayout({
       initial={attendance}
     >
       <div className="flex min-h-screen flex-col">
-        <header className="flex items-center justify-between border-b px-4 py-3">
-          <span className="flex items-center gap-2 font-heading font-semibold">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <StoreIcon className="size-4" aria-hidden />
+        <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex items-center gap-2 font-heading font-semibold">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <StoreIcon className="size-4" aria-hidden />
+              </span>
+              <span className="hidden sm:inline">NAVEXPRESS ·</span> Caja
             </span>
-            NAVEXPRESS · Caja
-          </span>
-          <div className="flex items-center gap-3">
+            <GoalChip goal={goal} align="start" />
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
             <AreaLinks role={user.role} current="sell" />
             <AttendanceBadge />
-            <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <span className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
               <UserRoundIcon className="size-4" aria-hidden />
               {user.name}
             </span>
+            {/* Shown only while a shift is open at the till. */}
+            <CloseShiftButton />
             <LogoutButton />
           </div>
         </header>

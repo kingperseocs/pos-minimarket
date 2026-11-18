@@ -1,4 +1,5 @@
 import type { Product, ProductCatalogEntry } from "../entities/product";
+import type { NetUnit } from "../services/packaging";
 
 export interface CreateProductData {
   name: string;
@@ -10,8 +11,9 @@ export interface CreateProductData {
   priceCost: number | null;
   // Expiry control: null = follow the category.
   tracksExpiry: boolean | null;
-  workerDiscountAmount: number;
   imageUrl?: string | null;
+  netContent: number | null;
+  netContentUnit: NetUnit | null;
 }
 
 export interface UpdateProductData extends CreateProductData {
@@ -24,7 +26,8 @@ export interface ProductRepository {
   findSellable(): Promise<Product[]>;
   findAll(): Promise<Product[]>;
   findById(id: number): Promise<Product | null>;
-  create(data: CreateProductData): Promise<void>;
+  // Returns the new product's id.
+  create(data: CreateProductData): Promise<number>;
   update(data: UpdateProductData): Promise<void>;
   setActive(id: number, isActive: boolean): Promise<void>;
   isImageInUse(imageUrl: string): Promise<boolean>;

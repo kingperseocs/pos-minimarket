@@ -1,4 +1,9 @@
-import { DNI_LOOKUP_TIMEOUT_MS, identityLookup } from "./identity";
+import {
+  companyLookup,
+  DNI_LOOKUP_TIMEOUT_MS,
+  identityLookup,
+  RUC_LOOKUP_TIMEOUT_MS,
+} from "./identity";
 import type { AttendanceDeps } from "@/application/use-cases/attendance/deps";
 import {
   attendanceRepository,
@@ -6,7 +11,11 @@ import {
   cashShiftRepository,
   discountPolicyRepository,
   productRepository,
+  promoDiscountRepository,
   saleRepository,
+  salesAnalyticsRepository,
+  salesGoalRepository,
+  supplierRepository,
   userRepository,
   workerRepository,
   workScheduleRepository,
@@ -19,6 +28,12 @@ export const saleDeps = {
   products: productRepository,
   workers: workerRepository,
   policies: discountPolicyRepository,
+  promos: promoDiscountRepository,
+};
+
+export const promoDiscountDeps = {
+  promos: promoDiscountRepository,
+  audit: auditRepository,
 };
 
 export const workerDeps = {
@@ -28,6 +43,11 @@ export const workerDeps = {
   policies: discountPolicyRepository,
 };
 
+export const rucLookupDeps = {
+  suppliers: supplierRepository,
+  companies: companyLookup,
+};
+
 export const attendanceDeps: AttendanceDeps = {
   attendance: attendanceRepository,
   schedules: workScheduleRepository,
@@ -35,4 +55,10 @@ export const attendanceDeps: AttendanceDeps = {
   shifts: cashShiftRepository,
 };
 
-export { DNI_LOOKUP_TIMEOUT_MS };
+export const goalDeps = {
+  goals: salesGoalRepository,
+  analytics: salesAnalyticsRepository,
+  audit: auditRepository,
+};
+
+export { DNI_LOOKUP_TIMEOUT_MS, RUC_LOOKUP_TIMEOUT_MS };

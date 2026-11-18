@@ -1,9 +1,9 @@
 "use client";
 
 import {
+  CheckIcon,
   CircleAlertIcon,
   ImageUpIcon,
-  InfoIcon,
   Loader2Icon,
   TriangleAlertIcon,
   XIcon,
@@ -13,6 +13,11 @@ import { MAX_PRODUCT_IMAGE_BYTES } from "@/application/use-cases/products/upload
 import { ProductImagePlaceholder } from "@/components/pos/product-image-placeholder";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { PopoverDescription } from "@/components/ui/popover";
+import { compressImage } from "@/lib/compress-image";
+import { cn } from "@/lib/utils";
+import { InfoPopover } from "./price-info";
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 // Limit on the original file picked by the admin. It gets compressed before
@@ -28,32 +33,6 @@ const formatKB = (bytes: number) =>
     ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-// Phone photos are several MB; downscale + re-encode to WebP in the browser
-// so uploads stay small and fast (and well under the server's 2 MB limit).
-async function compressImage(file: File) {
-  const bitmap = await createImageBitmap(file);
-  const { width, height } = bitmap;
-  const scale = Math.min(1, TARGET_DIMENSION / Math.max(width, height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-
-  const blob = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("No se pudo procesar la imagen"))),
-      "image/webp",
-      0.85,
-    ),
-  );
-
-  return {
-    blob,
-    original: { width, height },
-    result: { width: canvas.width, height: canvas.height },
-  };
-}
 
 type Notice =
   | { kind: "error"; message: string }
@@ -98,7 +77,7 @@ export function ProductImageField({
     setNotice(null);
     setBusy(true);
     try {
-      const { blob, original, result } = await compressImage(file);
+      const { blob, original, result } = await compressImage(file, TARGET_DIMENSION);
       if (blob.size > MAX_PRODUCT_IMAGE_BYTES) {
         throw new Error("La imagen sigue siendo demasiado pesada tras optimizarla.");
       }
@@ -138,55 +117,107 @@ export function ProductImageField({
     }
   }
 
+  const [dragging, setDragging] = useState(false);
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-4">
-        <div className="relative w-28 shrink-0">
-          <ProductImagePlaceholder src={value} alt="Foto del producto" />
-          {uploading && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-md bg-background/70">
-              <Loader2Icon className="size-5 animate-spin" aria-hidden />
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col gap-2">
-          <input
-            ref={inputRef}
-            type="file"
-            accept={ACCEPTED_TYPES.join(",")}
-            className="sr-only"
-            id="product-image"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void handleFile(file);
-            }}
-          />
-          <Button
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1">
+        <Label htmlFor="product-image">Foto</Label>
+        <InfoPopover label="Requisitos de la foto" title="Requisitos de la foto" align="start">
+          <PopoverDescription className="text-xs" render={<div />}>
+            <ul className="list-disc space-y-0.5 pl-4">
+              <li>Formatos: JPG, PNG o WebP.</li>
+              <li>Peso máximo: {formatKB(MAX_ORIGINAL_BYTES)}.</li>
+              <li>
+                Recomendado: foto cuadrada de 800×800 px, con el producto
+                centrado y fondo claro.
+              </li>
+              <li>Se optimiza sola antes de subir (≈ 50–150 KB).</li>
+            </ul>
+          </PopoverDescription>
+        </InfoPopover>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED_TYPES.join(",")}
+        className="sr-only"
+        id="product-image"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void handleFile(file);
+        }}
+      />
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-lg",
+          !value && "border-2 border-dashed transition-colors",
+          !value && (dragging ? "border-primary bg-primary/5" : "border-muted-foreground/25"),
+        )}
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (!uploading) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          const file = event.dataTransfer.files?.[0];
+          if (file && !uploading) void handleFile(file);
+        }}
+      >
+        {value ? (
+          <>
+            <ProductImagePlaceholder src={value} alt="Foto del producto" className="rounded-none" />
+            {!uploading && (
+              <div className="absolute right-2 bottom-2 flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="shadow-sm"
+                  onClick={() => inputRef.current?.click()}
+                >
+                  <ImageUpIcon data-icon="inline-start" />
+                  Cambiar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="text-destructive shadow-sm hover:text-destructive"
+                  onClick={() => {
+                    setNotice(null);
+                    onChange(null);
+                  }}
+                >
+                  <XIcon data-icon="inline-start" />
+                  Quitar
+                </Button>
+              </div>
+            )}
+          </>
+        ) : (
+          <button
             type="button"
-            variant="outline"
-            size="sm"
             disabled={uploading}
             onClick={() => inputRef.current?.click()}
+            className="flex aspect-4/3 w-full flex-col items-center justify-center gap-2 p-4 text-center text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none"
           >
-            <ImageUpIcon data-icon="inline-start" />
-            {uploading ? "Subiendo..." : value ? "Cambiar foto" : "Subir foto"}
-          </Button>
-          {value && !uploading && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => {
-                setNotice(null);
-                onChange(null);
-              }}
-            >
-              <XIcon data-icon="inline-start" />
-              Quitar foto
-            </Button>
-          )}
-        </div>
+            <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <ImageUpIcon className="size-6" aria-hidden />
+            </span>
+            <span className="text-sm font-medium text-foreground">
+              {uploading ? "Subiendo..." : "Toca para subir una foto"}
+            </span>
+            <span className="hidden text-xs sm:block">o arrástrala aquí · JPG, PNG o WebP</span>
+          </button>
+        )}
+        {uploading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+            <Loader2Icon className="size-6 animate-spin" aria-hidden />
+          </div>
+        )}
       </div>
 
       {notice?.kind === "error" ? (
@@ -206,29 +237,12 @@ export function ProductImageField({
             {notice.message}
           </AlertDescription>
         </Alert>
-      ) : (
-        <Alert aria-live="polite">
-          <InfoIcon />
-          <AlertTitle>
-            {notice?.kind === "success" ? "Foto lista" : "Requisitos de la foto"}
-          </AlertTitle>
-          <AlertDescription>
-            {notice?.kind === "success" ? (
-              notice.message
-            ) : (
-              <ul className="list-disc space-y-0.5 pl-4">
-                <li>Formatos: JPG, PNG o WebP.</li>
-                <li>Peso máximo: {formatKB(MAX_ORIGINAL_BYTES)}.</li>
-                <li>
-                  Recomendado: foto cuadrada de 800×800 px, con el producto
-                  centrado y fondo claro.
-                </li>
-                <li>Se optimiza sola antes de subir (≈ 50–150 KB).</li>
-              </ul>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
+      ) : notice?.kind === "success" ? (
+        <p aria-live="polite" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <CheckIcon className="size-3.5 text-primary" aria-hidden />
+          {notice.message}
+        </p>
+      ) : null}
     </div>
   );
 }

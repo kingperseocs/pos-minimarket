@@ -7,13 +7,16 @@ import { DrizzleDiscountPolicyRepository } from "./drizzle-discount-policy-repos
 import { DrizzleInventoryRepository } from "./drizzle-inventory-repository";
 import { DrizzlePresentationRepository } from "./drizzle-presentation-repository";
 import { DrizzleProductRepository } from "./drizzle-product-repository";
-import { DrizzlePurchaseOrderRepository } from "./drizzle-purchase-order-repository";
+import { DrizzlePromoDiscountRepository } from "./drizzle-promo-discount-repository";
 import { DrizzleReceivingRepository } from "./drizzle-receiving-repository";
 import { DrizzleSaleRepository } from "./drizzle-sale-repository";
+import { DrizzleSalesAnalyticsRepository } from "./drizzle-sales-analytics-repository";
+import { DrizzleSalesGoalRepository } from "./drizzle-sales-goal-repository";
 import { DrizzleSupplierRepository } from "./drizzle-supplier-repository";
 import { DrizzleUserRepository } from "./drizzle-user-repository";
 import { DrizzleWorkerRepository } from "./drizzle-worker-repository";
 import { DrizzleWorkScheduleRepository } from "./drizzle-work-schedule-repository";
+import { SampleSalesAnalyticsRepository } from "./sample-sales-analytics-repository";
 
 export const attendanceRepository = new DrizzleAttendanceRepository();
 export const auditRepository = new DrizzleAuditRepository();
@@ -24,9 +27,13 @@ export const discountPolicyRepository = new DrizzleDiscountPolicyRepository();
 export const inventoryRepository = new DrizzleInventoryRepository();
 export const presentationRepository = new DrizzlePresentationRepository();
 export const productRepository = new DrizzleProductRepository();
-export const purchaseOrderRepository = new DrizzlePurchaseOrderRepository();
+export const promoDiscountRepository = new DrizzlePromoDiscountRepository();
 export const receivingRepository = new DrizzleReceivingRepository();
 export const saleRepository = new DrizzleSaleRepository();
+export const salesAnalyticsRepository = new DrizzleSalesAnalyticsRepository();
+export const salesGoalRepository = new DrizzleSalesGoalRepository();
+// Example data for the dashboard before the store has real sales.
+export const sampleSalesAnalyticsRepository = new SampleSalesAnalyticsRepository();
 export const supplierRepository = new DrizzleSupplierRepository();
 export const userRepository = new DrizzleUserRepository();
 export const workerRepository = new DrizzleWorkerRepository();

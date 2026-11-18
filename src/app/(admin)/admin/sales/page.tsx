@@ -7,6 +7,7 @@ import {
   type SaleRow,
   SalesTable,
 } from "@/components/admin/sales/sales-table";
+import { TableSkeleton } from "@/components/layout/page-skeleton";
 import { Skeleton } from "@/components/ui/skeleton";
 import { saleRepository } from "@/infrastructure/repositories";
 
@@ -47,13 +48,18 @@ async function SalesReport({ date }: { date: string }) {
     subtotal: sale.subtotal,
     discountTotal: sale.discountTotal,
     giftTotal: sale.giftTotal,
+    rounding: sale.rounding,
     courtesyApprovedByName: sale.courtesyApprovedByName,
     total: sale.total,
     workerName: sale.workerName,
     workerDni: sale.workerDni,
     workerVerification: sale.workerVerification,
     pointsEarned: sale.pointsEarned,
+    pointsRedeemed: sale.pointsRedeemed,
+    redeemTotal: sale.redeemTotal,
     auditFlags: sale.auditFlags,
+    promoDiscountName: sale.promoDiscountName,
+    promoDiscountPercent: sale.promoDiscountPercent,
     units: sale.items.reduce((sum, item) => sum + item.quantity, 0),
     items: sale.items.map((item) => ({
       id: item.id,
@@ -84,7 +90,7 @@ function SalesReportSkeleton() {
           <Skeleton key={i} className="h-32 rounded-xl" />
         ))}
       </div>
-      <Skeleton className="h-96 rounded-xl" />
+      <TableSkeleton />
     </>
   );
 }

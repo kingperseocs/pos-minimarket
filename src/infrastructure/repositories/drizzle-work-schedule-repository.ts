@@ -14,6 +14,7 @@ function toSchedule(row: typeof workSchedules.$inferSelect): WorkSchedule {
     startTime: hhmm(row.startTime),
     endTime: hhmm(row.endTime),
     toleranceMin: row.toleranceMin,
+    earlyMin: row.earlyMin,
   };
 }
 

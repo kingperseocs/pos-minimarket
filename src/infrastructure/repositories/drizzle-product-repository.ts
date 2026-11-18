@@ -2,6 +2,7 @@ import { and, asc, eq, exists, gt, inArray, ne } from "drizzle-orm";
 import type { CategoryIcon } from "@/domain/entities/category";
 import type { Product, ProductCatalogEntry } from "@/domain/entities/product";
 import { tracksExpiry } from "@/domain/services/expiry";
+import type { NetUnit } from "@/domain/services/packaging";
 import type {
   CreateProductData,
   ProductRepository,
@@ -31,7 +32,6 @@ function toProduct({ product: row, category }: ProductRow): Product {
     categoryName: category.name,
     categoryIcon: category.icon as CategoryIcon | null,
     priceSale: Number(row.priceSale),
-    workerDiscountAmount: Number(row.workerDiscountAmount),
     priceCost: row.priceCost === null ? null : Number(row.priceCost),
     stockQuantity: row.stockQuantity,
     trackStock: row.trackStock,
@@ -39,6 +39,8 @@ function toProduct({ product: row, category }: ProductRow): Product {
     tracksExpiry: tracksExpiry(row.tracksExpiry, category.tracksExpiry),
     expiryWarningDays: category.expiryWarningDays,
     imageUrl: row.imageUrl,
+    netContent: row.netContent === null ? null : Number(row.netContent),
+    netContentUnit: row.netContentUnit as NetUnit | null,
     isActive: row.isActive,
   };
 }
@@ -98,8 +100,8 @@ export class DrizzleProductRepository implements ProductRepository {
     return row ? toProduct(row) : null;
   }
 
-  async create(data: CreateProductData): Promise<void> {
-    await db.insert(products).values({
+  async create(data: CreateProductData): Promise<number> {
+    const [row] = await db.insert(products).values({
       name: data.name,
       barcode: data.barcode,
       description: data.description,
@@ -107,9 +109,11 @@ export class DrizzleProductRepository implements ProductRepository {
       priceSale: data.priceSale.toString(),
       priceCost: data.priceCost?.toString() ?? null,
       tracksExpiry: data.tracksExpiry,
-      workerDiscountAmount: data.workerDiscountAmount.toFixed(2),
       imageUrl: data.imageUrl ?? null,
-    });
+      netContent: data.netContent?.toString() ?? null,
+      netContentUnit: data.netContentUnit,
+    }).returning({ id: products.id });
+    return row.id;
   }
 
   async update(data: UpdateProductData): Promise<void> {
@@ -123,8 +127,9 @@ export class DrizzleProductRepository implements ProductRepository {
         priceSale: data.priceSale.toString(),
         priceCost: data.priceCost?.toString() ?? null,
         tracksExpiry: data.tracksExpiry,
-        workerDiscountAmount: data.workerDiscountAmount.toFixed(2),
         imageUrl: data.imageUrl,
+        netContent: data.netContent?.toString() ?? null,
+        netContentUnit: data.netContentUnit,
         updatedAt: new Date(),
       })
       .where(eq(products.id, data.id));
@@ -164,19 +169,10 @@ export class DrizzleProductRepository implements ProductRepository {
       .select({
         id: products.id,
         priceSale: products.priceSale,
-        workerDiscountAmount: products.workerDiscountAmount,
       })
       .from(products)
       .where(inArray(products.id, ids));
 
-    return new Map(
-      rows.map((row) => [
-        row.id,
-        {
-          price: Number(row.priceSale),
-          workerDiscountAmount: Number(row.workerDiscountAmount),
-        },
-      ]),
-    );
+    return new Map(rows.map((row) => [row.id, { price: Number(row.priceSale) }]));
   }
 }

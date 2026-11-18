@@ -106,7 +106,10 @@ export async function runSync() {
           workerId: sale.workerId,
           workerVerification: sale.workerVerification,
           discountTotal: sale.discountTotal,
+          roundingAmount: sale.roundingAmount,
           policyId: sale.policyId,
+          promoDiscountId: sale.promoDiscountId,
+          pointsRedeemed: sale.pointsRedeemed,
         });
         salesSynced++;
       } catch (error) {

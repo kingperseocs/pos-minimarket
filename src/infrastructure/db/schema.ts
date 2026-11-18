@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
   foreignKey,
   index,
@@ -61,6 +62,7 @@ export const loyaltyMovementTypeEnum = pgEnum("loyalty_movement_type", [
   "earn",
   "adjust",
   "reverse",
+  "redeem",
 ]);
 
 export const locationKindEnum = pgEnum("location_kind", ["warehouse", "store"]);
@@ -70,12 +72,6 @@ export const cashShiftStatusEnum = pgEnum("cash_shift_status", [
   "reviewed",
 ]);
 export const cashMovementTypeEnum = pgEnum("cash_movement_type", ["in", "out"]);
-export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [
-  "pending",
-  "partial",
-  "received",
-  "cancelled",
-]);
 // A product counted in the "conteo del día": matched closes on its own;
 // pending waits for the admin, who approves the adjustment or asks for a
 // recount (rejected).
@@ -117,6 +113,23 @@ export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
 // How a line's product was identified (barcode reader or by hand); null on
 // lines recorded before the reader existed.
 export const captureSourceEnum = pgEnum("capture_source", ["scan", "manual"]);
+// Whether the supplier's invoice of a receipt was paid, and how.
+export const receiptPaymentStatusEnum = pgEnum("receipt_payment_status", [
+  "pending",
+  "paid",
+]);
+// A receipt entered by the Almacén waits for the admin to register its
+// invoice (prices, discount, payment terms); the admin's own receipts are
+// registered at once.
+export const receiptInvoiceStatusEnum = pgEnum("receipt_invoice_status", [
+  "pending",
+  "registered",
+]);
+export const supplierPaymentMethodEnum = pgEnum("supplier_payment_method", [
+  "cash",
+  "yape",
+  "transfer",
+]);
 export const attendanceStatusEnum = pgEnum("attendance_status", [
   "open",
   "closed",
@@ -198,6 +211,9 @@ export const categories = pgTable(
   {
     id: integer("id_category").primaryKey().generatedByDefaultAsIdentity(),
     name: text("name").notNull(),
+    // Subcategory of (Galletas saladas → Galletas). One level only: a parent
+    // is always a main category.
+    parentId: integer("id_parent_category"),
     // Key from CATEGORY_ICONS (domain); the UI maps it to an icon component.
     icon: text("icon"),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -216,6 +232,12 @@ export const categories = pgTable(
   // "Bebidas" and "bebidas" are the same category for a cashier.
   (table) => [
     uniqueIndex("categories_name_lower_unique").on(sql`lower(${table.name})`),
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "categories_parent_fk",
+    }),
+    index("categories_parent_idx").on(table.parentId),
   ],
 );
 
@@ -235,8 +257,9 @@ export const products = pgTable(
       .notNull()
       .references(() => categories.id),
     priceSale: numeric("price_sale", { precision: 10, scale: 2 }).notNull(),
-    // Soles an identified airport worker gets off each unit (always below
-    // the price; only the first units of a purchase, see discount_policies).
+    // Unused since the worker discount became a percentage chosen at the
+    // till (promo_discounts). Kept so old rows/queued sales stay readable;
+    // drop in a later migration.
     workerDiscountAmount: numeric("worker_discount_amount", {
       precision: 10,
       scale: 2,
@@ -254,6 +277,10 @@ export const products = pgTable(
     // Overrides the category's tracks_expiry; null = follow the category.
     tracksExpiry: boolean("tracks_expiry"),
     imageUrl: text("image_url"),
+    // What one unit holds, from the supplier's catalog ("31.5 g"). Both or
+    // neither. Informative: the till always sells whole units.
+    netContent: numeric("net_content", { precision: 10, scale: 3 }),
+    netContentUnit: text("net_content_unit"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -282,6 +309,9 @@ export const productPresentations = pgTable(
     unitsTotal: integer("units_total").notNull(),
     // Barcode printed on the box/display, for scanning at reception.
     barcode: text("barcode").unique(),
+    // The supplier's code for this pack (800436 = Crackelet 36 x 47 g on
+    // the catalog): what is ordered. Not the barcode.
+    supplierCode: text("supplier_code"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -315,7 +345,31 @@ export const suppliers = pgTable("suppliers", {
   contactName: text("contact_name"),
   phone: text("phone"),
   email: text("email"),
+  // Dirección fiscal.
   address: text("address"),
+  website: text("website"),
+  // Who to call about expired, missing or damaged goods.
+  claimsContactName: text("claims_contact_name"),
+  claimsPhone: text("claims_phone"),
+  // Weekdays the order is delivered to the store (0 = Sunday … 6).
+  deliveryDays: integer("delivery_days")
+    .array()
+    .notNull()
+    .default(sql`'{}'::integer[]`),
+  // Usual delivery window, "HH:MM" in store time.
+  deliveryTimeFrom: text("delivery_time_from"),
+  deliveryTimeTo: text("delivery_time_to"),
+  // Who brings the goods.
+  driverName: text("driver_name"),
+  driverPhone: text("driver_phone"),
+  // Payment: Yape/Plin (with its number) and credit (with its days). Bank
+  // accounts live in supplier_bank_accounts.
+  acceptsYapePlin: boolean("accepts_yape_plin").notNull().default(false),
+  yapePlinPhone: text("yape_plin_phone"),
+  givesCredit: boolean("gives_credit").notNull().default(false),
+  creditDays: integer("credit_days"),
+  // Where the up-to-date catalog / price list lives (web, Drive, app…).
+  catalogUrl: text("catalog_url"),
   notes: text("notes"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -325,6 +379,26 @@ export const suppliers = pgTable("suppliers", {
     .notNull()
     .defaultNow(),
 });
+
+// Bank accounts to pay a supplier by transfer. None = "no tiene cuentas".
+export const supplierBankAccounts = pgTable(
+  "supplier_bank_accounts",
+  {
+    id: integer("id_supplier_bank_account")
+      .primaryKey()
+      .generatedByDefaultAsIdentity(),
+    supplierId: integer("id_supplier")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "cascade" }),
+    bank: text("bank").notNull(),
+    accountNumber: text("account_number").notNull(),
+    // Código de cuenta interbancario (20 digits), optional.
+    cci: text("cci"),
+    // Order typed in the form.
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (table) => [index("supplier_bank_accounts_supplier_idx").on(table.supplierId)],
+);
 
 // Which categories each supplier delivers. Many-to-many: one supplier can
 // bring several categories, and one category comes from several suppliers.
@@ -393,8 +467,8 @@ export const discountPolicies = pgTable("discount_policies", {
   })
     .notNull()
     .default("0"),
-  // Units of a purchase that get their product's discount (the first ones
-  // in the basket).
+  // Units of a purchase that get the chosen percentage (the first ones in
+  // the basket).
   maxDiscountedUnitsPerSale: integer("max_discounted_units_per_sale")
     .notNull()
     .default(3),
@@ -406,12 +480,64 @@ export const discountPolicies = pgTable("discount_policies", {
     .notNull()
     .default("0"),
   pointsPerSol: numeric("points_per_sol", { precision: 5, scale: 2 }).notNull(),
+  // Points worth S/ 1 off when a worker redeems them (0 = no redemption).
+  redeemPointsPerSol: integer("redeem_points_per_sol").notNull().default(0),
+  // Fewest points a worker must hold to redeem.
+  minRedeemPoints: integer("min_redeem_points").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
+
+// Monthly sales target (soles). Versioned like discount_policies: never
+// updated, the latest row of a month wins, and a month without rows inherits
+// the latest earlier one.
+export const salesGoals = pgTable(
+  "sales_goals",
+  {
+    id: integer("id_sales_goal").primaryKey().generatedByDefaultAsIdentity(),
+    // YYYY-MM in the store's zone.
+    month: text("month").notNull(),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("sales_goals_month_idx").on(table.month, table.createdAt),
+    check("sales_goals_month_format", sql`${table.month} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
+    check("sales_goals_amount_positive", sql`${table.amount} > 0`),
+  ],
+);
+
+// Percentage discounts the admin offers and the cashier may apply to a whole
+// sale (e.g. "Promo 30%"). The percent never changes once created: to offer
+// another one the admin creates a new row, so a sale charged offline with a
+// discount still matches it when it syncs. Never deleted (sales point at
+// them): deactivated instead.
+export const promoDiscounts = pgTable(
+  "promo_discounts",
+  {
+    id: integer("id_promo_discount").primaryKey().generatedByDefaultAsIdentity(),
+    name: text("name").notNull(),
+    percent: integer("percent").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("promo_discounts_name_lower_unique").on(sql`lower(${table.name})`),
+    check("promo_discounts_percent_range", sql`${table.percent} between 1 and 100`),
+  ],
+);
 
 export const sales = pgTable(
   "sales",
@@ -426,8 +552,8 @@ export const sales = pgTable(
       .references(() => users.id),
     status: saleStatusEnum("status").notNull().default("completed"),
     paymentType: paymentTypeEnum("payment_type").notNull(),
-    // subtotal - discount_total - courtesy_total = total (what the customer
-    // actually paid).
+    // subtotal - discount_total - courtesy_total + rounding_amount = total
+    // (what the customer actually paid).
     subtotal: numeric("subtotal", { precision: 10, scale: 2 }).notNull(),
     discountTotal: numeric("discount_total", { precision: 10, scale: 2 })
       .notNull()
@@ -437,6 +563,10 @@ export const sales = pgTable(
       .notNull()
       .default("0"),
     total: numeric("total", { precision: 10, scale: 2 }).notNull(),
+    // To whole soles on discounted sales (−0.32: S/ 20.32 charged S/ 20.00).
+    roundingAmount: numeric("rounding_amount", { precision: 10, scale: 2 })
+      .notNull()
+      .default("0"),
     // Value of the lines given away (part of subtotal, not of total): the
     // worker's birthday gift. On older sales, courtesies approved by the
     // admin in courtesy_approved_by.
@@ -448,10 +578,22 @@ export const sales = pgTable(
     ),
     workerId: integer("id_worker").references(() => workers.id),
     policyId: integer("id_policy").references(() => discountPolicies.id),
+    // Percentage discount the cashier applied to the whole sale, and its
+    // percent at the time (snapshot). Exclusive with the worker discount.
+    promoDiscountId: integer("id_promo_discount").references(
+      () => promoDiscounts.id,
+    ),
+    promoDiscountPercent: integer("promo_discount_percent").notNull().default(0),
     workerVerification: workerVerificationEnum("worker_verification")
       .notNull()
       .default("none"),
     pointsEarned: integer("points_earned").notNull().default(0),
+    // Worker points spent on this sale and the whole soles they took off
+    // the total (not cash received).
+    pointsRedeemed: integer("points_redeemed").notNull().default(0),
+    redeemTotal: numeric("redeem_total", { precision: 10, scale: 2 })
+      .notNull()
+      .default("0"),
     // Anomalies found when the server re-priced the sale (see sale-audit.ts).
     auditFlags: text("audit_flags")
       .array()
@@ -553,6 +695,8 @@ export const workSchedules = pgTable(
     startTime: time("start_time").notNull(),
     endTime: time("end_time").notNull(),
     toleranceMin: integer("tolerance_min").notNull().default(10),
+    // "Marcar entrada" opens this many minutes before start_time.
+    earlyMin: integer("early_min").notNull().default(5),
     updatedBy: integer("id_updated_by").references(() => users.id),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -764,58 +908,6 @@ export const stockLots = pgTable(
   ],
 );
 
-// What was asked of a supplier before it arrives. Receipts made from it
-// move its status (pending → partial → received).
-export const purchaseOrders = pgTable(
-  "purchase_orders",
-  {
-    id: integer("id_order").primaryKey().generatedByDefaultAsIdentity(),
-    supplierId: integer("id_supplier")
-      .notNull()
-      .references(() => suppliers.id),
-    status: purchaseOrderStatusEnum("status").notNull().default("pending"),
-    expectedAt: date("expected_at", { mode: "string" }),
-    // Sum of the lines' estimated cost (when known).
-    estimatedTotal: numeric("estimated_total", { precision: 10, scale: 2 }),
-    note: text("note"),
-    createdBy: integer("id_created_by").references(() => users.id),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [index("purchase_orders_status_idx").on(table.status)],
-);
-
-export const purchaseOrderItems = pgTable(
-  "purchase_order_items",
-  {
-    id: integer("id_order_item").primaryKey().generatedByDefaultAsIdentity(),
-    orderId: integer("id_order")
-      .notNull()
-      .references(() => purchaseOrders.id, { onDelete: "cascade" }),
-    productId: integer("id_product")
-      .notNull()
-      .references(() => products.id),
-    // null = ordered by the unit.
-    presentationId: integer("id_presentation"),
-    quantity: integer("quantity").notNull(),
-    units: integer("units").notNull(),
-    estimatedTotal: numeric("estimated_total", { precision: 10, scale: 2 }),
-  },
-  (table) => [
-    // Named explicitly: the generated name exceeds Postgres' 63 chars.
-    foreignKey({
-      columns: [table.presentationId],
-      foreignColumns: [productPresentations.id],
-      name: "purchase_order_items_presentation_fk",
-    }),
-    index("purchase_order_items_order_idx").on(table.orderId),
-  ],
-);
-
 // Merchandise entering a location (the Almacén) from a supplier. Each line
 // moves stock_movements (purchase_receipt) and stock_lots in the same
 // transaction, and updates the product's weighted average cost.
@@ -826,20 +918,38 @@ export const goodsReceipts = pgTable(
     // stock_movements.ref_id of the receipt's movements.
     uuid: uuid("uuid").notNull().unique().defaultRandom(),
     supplierId: integer("id_supplier").references(() => suppliers.id),
-    // The purchase order this merchandise answers, if any.
-    orderId: integer("id_order").references(() => purchaseOrders.id),
     locationId: integer("id_location")
       .notNull()
       .references(() => locations.id),
     docType: receiptDocTypeEnum("doc_type").notNull().default("ninguno"),
     // Serie-número as printed, e.g. "F020-00014194".
     docNumber: text("doc_number"),
-    total: numeric("total", { precision: 10, scale: 2 }).notNull(),
+    // null until the invoice is registered.
+    total: numeric("total", { precision: 10, scale: 2 }),
     note: text("note"),
     createdBy: integer("id_created_by").references(() => users.id),
+    // Step 2 of a receipt: the admin types the invoice over what the Almacén
+    // counted, and the gaps between both become receipt_discrepancies.
+    invoiceStatus: receiptInvoiceStatusEnum("invoice_status")
+      .notNull()
+      .default("registered"),
+    invoicedAt: timestamp("invoiced_at", { withTimezone: true }),
+    invoicedBy: integer("id_invoiced_by").references(() => users.id),
+    // Photo of the paper invoice taken by the Almacén on arrival.
+    invoicePhotoUrl: text("invoice_photo_url"),
     receivedAt: timestamp("received_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The invoice is reviewed on arrival and paid later: by due_date (the
+    // arrival day plus the supplier's credit days).
+    paymentStatus: receiptPaymentStatusEnum("payment_status")
+      .notNull()
+      .default("pending"),
+    dueDate: date("due_date", { mode: "string" }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    paidMethod: supplierPaymentMethodEnum("paid_method"),
+    paidBy: integer("id_paid_by").references(() => users.id),
+    paymentNote: text("payment_note"),
   },
   (table) => [
     // The same invoice can't be entered twice.
@@ -868,8 +978,16 @@ export const goodsReceiptItems = pgTable(
     quantity: integer("quantity").notNull(),
     units: integer("units").notNull(),
     receivedUnits: integer("received_units").notNull(),
-    lineTotal: numeric("line_total", { precision: 10, scale: 2 }).notNull(),
-    unitCost: numeric("unit_cost", { precision: 12, scale: 4 }).notNull(),
+    // What was paid for the line (after the supplier's discount); null
+    // until the invoice is registered.
+    lineTotal: numeric("line_total", { precision: 10, scale: 2 }),
+    // The invoice amount before a volume discount ("8% por 10 paquetes") and
+    // that discount; null / 0 without one.
+    listTotal: numeric("list_total", { precision: 10, scale: 2 }),
+    discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
+      .notNull()
+      .default("0"),
+    unitCost: numeric("unit_cost", { precision: 12, scale: 4 }),
     isBonus: boolean("is_bonus").notNull().default(false),
     expiresAt: date("expires_at", { mode: "string" }),
     captureSource: captureSourceEnum("capture_source"),
@@ -1017,7 +1135,8 @@ export const stockLevels = pgTable(
 );
 
 // Points ledger: every movement is a row, so the balance can always be
-// explained. id_sale is unique so a retried sync never awards points twice.
+// explained. A sale may earn and redeem (one row each); (id_sale, type) is
+// unique so a retried sync never moves points twice.
 export const loyaltyLedger = pgTable(
   "loyalty_ledger",
   {
@@ -1025,16 +1144,18 @@ export const loyaltyLedger = pgTable(
     workerId: integer("id_worker")
       .notNull()
       .references(() => workers.id),
-    saleId: integer("id_sale")
-      .unique()
-      .references(() => sales.id),
+    saleId: integer("id_sale").references(() => sales.id),
+    // Positive when earned, negative when redeemed.
     points: integer("points").notNull(),
     type: loyaltyMovementTypeEnum("type").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("loyalty_ledger_worker_idx").on(table.workerId)],
+  (table) => [
+    index("loyalty_ledger_worker_idx").on(table.workerId),
+    uniqueIndex("loyalty_ledger_sale_type_unique").on(table.saleId, table.type),
+  ],
 );
 
 // Append-only trail of sensitive actions (registrations, approvals, policy
@@ -1104,6 +1225,10 @@ export const salesRelations = relations(sales, ({ one, many }) => ({
   worker: one(workers, {
     fields: [sales.workerId],
     references: [workers.id],
+  }),
+  promoDiscount: one(promoDiscounts, {
+    fields: [sales.promoDiscountId],
+    references: [promoDiscounts.id],
   }),
   items: many(saleItems),
 }));

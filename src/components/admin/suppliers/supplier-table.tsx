@@ -1,17 +1,32 @@
 "use client";
 
-import { PencilIcon, PhoneIcon } from "lucide-react";
-import { useTransition } from "react";
+import {
+  BookOpenIcon,
+  PencilIcon,
+  PhoneIcon,
+  RotateCcwIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { setSupplierActive } from "@/actions/suppliers";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { createDialogHandle } from "@/components/ui/dialog";
+import {
+  DropdownMenuItem,
+  DropdownMenuLinkItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { TableCell, TableRow } from "@/components/ui/table";
-import type { Supplier } from "@/domain/entities/supplier";
+import {
+  formatDeliverySchedule,
+  formatPaymentMethods,
+  type Supplier,
+} from "@/domain/entities/supplier";
 import { usePagination } from "@/hooks/use-pagination";
 import { DataTable, ID_COLUMN, IdCell } from "../data-table";
 import { DataTablePagination } from "../data-table-pagination";
-import { DeactivateButton } from "../deactivate-button";
+import { RowActions } from "../row-actions";
 import { StatusBadge } from "../status-badge";
 import { type SupplierCategoryOption, SupplierForm } from "./supplier-form";
 
@@ -20,7 +35,8 @@ const COLUMNS = [
   { label: "RUC" },
   { label: "Proveedor" },
   { label: "Categorías" },
-  { label: "Contacto" },
+  { label: "Vendedor" },
+  { label: "Reparto y pago" },
   { label: "Estado" },
   { label: "Acciones", className: "text-right" },
 ];
@@ -28,9 +44,11 @@ const COLUMNS = [
 export function SupplierTable({
   suppliers,
   categories,
+  emptyMessage = "Aún no hay proveedores. Registra el primero con su RUC.",
 }: {
   suppliers: Supplier[];
   categories: SupplierCategoryOption[];
+  emptyMessage?: string;
 }) {
   const [isPending, startTransition] = useTransition();
   const pagination = usePagination(suppliers);
@@ -53,7 +71,7 @@ export function SupplierTable({
     <DataTable
       columns={COLUMNS}
       isEmpty={suppliers.length === 0}
-      emptyMessage="Aún no hay proveedores. Registra el primero con su RUC."
+      emptyMessage={emptyMessage}
       footer={
         <DataTablePagination
           {...pagination}
@@ -111,41 +129,78 @@ export function SupplierTable({
               <span className="text-muted-foreground">—</span>
             )}
           </TableCell>
+          <TableCell className="text-xs">
+            {formatDeliverySchedule(
+              supplier.deliveryDays,
+              supplier.deliveryTimeFrom,
+              supplier.deliveryTimeTo,
+            ) ?? <span className="text-muted-foreground">—</span>}
+            {formatPaymentMethods(supplier) && (
+              <div className="text-muted-foreground">
+                {formatPaymentMethods(supplier)}
+              </div>
+            )}
+          </TableCell>
           <TableCell>
             <StatusBadge active={supplier.isActive} />
           </TableCell>
           <TableCell>
-            <div className="flex justify-end gap-2">
-              <SupplierForm
-                supplier={supplier}
-                categories={categories}
-                trigger={
-                  <Button size="sm" variant="outline">
-                    <PencilIcon data-icon="inline-start" />
-                    Editar
-                  </Button>
-                }
-              />
-              {supplier.isActive ? (
-                <DeactivateButton
-                  label={`Desactivar ${supplier.tradeName ?? supplier.businessName}`}
-                  disabled={isPending}
-                  onClick={() => toggle(supplier)}
-                />
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={isPending}
-                  onClick={() => toggle(supplier)}
-                >
-                  Activar
-                </Button>
-              )}
-            </div>
+            <SupplierActions
+              supplier={supplier}
+              categories={categories}
+              disabled={isPending}
+              onToggle={() => toggle(supplier)}
+            />
           </TableCell>
         </TableRow>
       ))}
     </DataTable>
+  );
+}
+
+function SupplierActions({
+  supplier,
+  categories,
+  disabled,
+  onToggle,
+}: {
+  supplier: Supplier;
+  categories: SupplierCategoryOption[];
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  const [editDialog] = useState(createDialogHandle);
+  return (
+    <>
+      <RowActions label={supplier.tradeName ?? supplier.businessName} disabled={disabled}>
+        {supplier.catalogUrl && (
+          <DropdownMenuLinkItem
+            href={supplier.catalogUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <BookOpenIcon />
+            Ver catálogo
+          </DropdownMenuLinkItem>
+        )}
+        <DropdownMenuItem onClick={() => editDialog.open(null)}>
+          <PencilIcon />
+          Editar
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {supplier.isActive ? (
+          <DropdownMenuItem variant="destructive" onClick={onToggle}>
+            <Trash2Icon />
+            Desactivar
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={onToggle}>
+            <RotateCcwIcon />
+            Activar
+          </DropdownMenuItem>
+        )}
+      </RowActions>
+      <SupplierForm supplier={supplier} categories={categories} handle={editDialog} />
+    </>
   );
 }

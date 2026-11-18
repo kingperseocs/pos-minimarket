@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { barcodeSchema } from "./barcode";
 import { idSchema } from "./id";
+import { supplierCodeSchema } from "./supplier-code";
 
 export const presentationSchema = z.object({
   productId: idSchema,
@@ -17,6 +18,8 @@ export const presentationSchema = z.object({
     .min(2, "Debe contener al menos 2")
     .max(10_000, "Máximo 10 000"),
   barcode: barcodeSchema,
+  // The supplier's code to order this pack; blank = not entered.
+  supplierCode: supplierCodeSchema,
 });
 
 export const presentationUpdateSchema = presentationSchema.extend({

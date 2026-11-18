@@ -36,7 +36,17 @@ export const saleCreateSchema = z.object({
     .enum(["none", "dni_manual", "pin_online", "pin_offline"])
     .default("none"),
   discountTotal: z.number().nonnegative().default(0),
+  // Sent by POS versions that round discounted totals to whole soles. The
+  // server recomputes the amount; absent (older queued sales, charged
+  // without rounding) means the sale is not rounded.
+  roundingAmount: z.number().optional(),
   policyId: idSchema.optional(),
+  // Percentage discount the cashier applied (only its id: the percent is
+  // taken from the server). Exclusive with the worker discount.
+  promoDiscountId: idSchema.optional(),
+  // Worker points spent as whole soles off the sale. The soles are worked
+  // out on the server from the policy's rate, never taken from the client.
+  pointsRedeemed: z.number().int().nonnegative().default(0),
   // The till shift it was charged in. Optional: sales queued before shifts
   // existed keep syncing.
   shiftUuid: z.uuid().optional(),

@@ -3,8 +3,10 @@ import {
   type AttendanceTodayState,
 } from "@/domain/entities/attendance";
 import type { UserRole } from "@/domain/entities/user";
-import { ForbiddenError, ValidationError } from "@/domain/errors";
+import { ClockInNotAllowedError, ForbiddenError, ValidationError } from "@/domain/errors";
 import {
+  clockInBlockedMessage,
+  clockInWindow,
   computeEarlyLeave,
   computeLateMinutes,
   isOffSchedule,
@@ -37,8 +39,41 @@ export async function clockInUseCase(deps: AttendanceDeps, input: unknown, actor
     live: data.live,
     clockMovedBack: data.clockMovedBack,
   });
-  const workDate = storeDateKey(time.at);
-  const shift = scheduleFor(workDate, await deps.schedules.listByUser(actor.id));
+  const schedules = await deps.schedules.listByUser(actor.id);
+  let workDate = storeDateKey(time.at);
+  let shift = scheduleFor(workDate, schedules);
+  let outsideWindow: Exclude<ReturnType<typeof clockInWindow>, { allowed: true }> | null = null;
+
+  // Clock-in window (the admin's schedule decides). The admin is never
+  // blocked.
+  if (requiresAttendance(actor.role)) {
+    const clockWindow = clockInWindow(time.at, schedules);
+    if (clockWindow.allowed) {
+      shift = clockWindow.shift;
+      // A shift starting after midnight, marked the evening before.
+      workDate = storeDateKey(clockWindow.shift.start);
+    } else if (data.live) {
+      // Rejected, but the admin sees the attempt (e.g. marking at 06:00 from
+      // home for a 07:00 entrance).
+      await deps.audit.recordWithUuid(data.uuid, {
+        type: "attendance_clock_in_blocked",
+        actorId: actor.id,
+        payload: {
+          attendanceUuid: data.uuid,
+          reason: clockWindow.reason,
+          attemptedAt: time.at.toISOString(),
+          opensAt: clockWindow.opensAt?.toISOString() ?? null,
+          scheduledStart: clockWindow.shift?.start.toISOString() ?? null,
+        },
+        occurredAt: time.at,
+      });
+      throw new ClockInNotAllowedError(clockWindow.reason, clockInBlockedMessage(clockWindow));
+    } else {
+      // Made offline and replayed: a mark is never lost, but it's flagged
+      // for the admin (going offline must not bypass the rule).
+      outsideWindow = clockWindow;
+    }
+  }
   const lateMinutes = computeLateMinutes(time.at, shift);
 
   const inserted = await deps.attendance.insert({
@@ -53,7 +88,7 @@ export async function clockInUseCase(deps: AttendanceDeps, input: unknown, actor
     toleranceMin: shift?.toleranceMin ?? null,
     lateMinutes,
     offline: time.offline,
-    timeSuspicious: time.suspicious,
+    timeSuspicious: time.suspicious || outsideWindow !== null,
   });
   // Retried sync of the same mark: already done.
   if (!inserted) return;
@@ -68,11 +103,25 @@ export async function clockInUseCase(deps: AttendanceDeps, input: unknown, actor
       workDate,
       lateMinutes,
       offline: time.offline,
-      timeSuspicious: time.suspicious,
+      timeSuspicious: time.suspicious || outsideWindow !== null,
       deviceAt: data.deviceAt,
     },
     occurredAt: time.at,
   });
+  if (outsideWindow) {
+    await deps.audit.record({
+      type: "attendance_clock_in_outside_window",
+      actorId: actor.id,
+      payload: {
+        attendanceUuid: data.uuid,
+        workDate,
+        reason: outsideWindow.reason,
+        opensAt: outsideWindow.opensAt?.toISOString() ?? null,
+        deviceAt: data.deviceAt,
+      },
+      occurredAt: time.at,
+    });
+  }
 }
 
 // "Marcar salida". The till asks to close the cash drawer first; if it still

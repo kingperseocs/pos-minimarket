@@ -251,3 +251,248 @@
     width: 90%;
   }
 }
+/* Skeleton: a soft light band sweeps across while the screen loads. */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--background) 60%, transparent),
+    transparent
+  );
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer::after {
+    animation: none;
+    display: none;
+  }
+}
+
+/* Data-viz tokens (dashboard charts). Validated set: blue / orange / aqua
+   pass the colorblind checks in both modes; dark values are their own steps
+   for the dark surface, not an automatic flip. Text never wears these. */
+:root {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  /* Lighter step of the blue ramp: the bars that are not the highlight. */
+  --viz-1-soft: #86b6ef;
+  --viz-1-wash: rgb(42 120 214 / 0.1);
+  /* De-emphasis: the comparison period. */
+  --viz-previous: #a8a69f;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-muted: #898781;
+  --viz-good: #006300;
+  --viz-good-bg: rgb(12 163 12 / 0.1);
+  --viz-bad: #c02f2f;
+  --viz-bad-bg: rgb(208 59 59 / 0.1);
+}
+
+.dark {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-1-soft: #184f95;
+  --viz-1-wash: rgb(57 135 229 / 0.14);
+  --viz-previous: #6b6a65;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --viz-muted: #898781;
+  --viz-good: #3fc23f;
+  --viz-good-bg: rgb(12 163 12 / 0.16);
+  --viz-bad: #f07575;
+  --viz-bad-bg: rgb(208 59 59 / 0.18);
+}
+
+/* Monthly goal: the dog mascot (components/goals/dog-mascot.tsx) and the
+   orange progress bar. Each mood has its own gait; reduced motion leaves a
+   still dog and a static bar. */
+.goal-dog .dog-leg,
+.goal-dog .dog-tail,
+.goal-dog .dog-ear,
+.goal-dog .dog-body,
+.goal-dog .dog-head,
+.goal-dog .dog-tongue {
+  transform-box: fill-box;
+}
+.goal-dog .dog-leg { transform-origin: 50% 0%; }
+.goal-dog .dog-tail { transform-origin: 100% 100%; }
+.goal-dog .dog-ear { transform-origin: 50% 10%; }
+.goal-dog .dog-body { transform-origin: 50% 100%; }
+.goal-dog .dog-tongue { transform-origin: 50% 0%; }
+.goal-dog .dog-zzz { display: none; }
+
+/* Sleeping: lying down, slow breathing, z's floating up. */
+.goal-dog[data-mood="sleeping"] .dog-leg { transform: scaleY(0.4); }
+.goal-dog[data-mood="sleeping"] .dog-body {
+  transform: translateY(6px);
+  animation: goal-dog-breathe 3s ease-in-out infinite;
+}
+.goal-dog[data-mood="sleeping"] .dog-tail { transform: rotate(-60deg); }
+.goal-dog[data-mood="sleeping"] .dog-zzz {
+  display: inline;
+  animation: goal-dog-zzz 2.4s ease-in-out infinite;
+}
+
+/* Walking / running / excited: legs in alternate pairs, wagging tail. */
+.goal-dog[data-mood="walking"] { --dog-step: 700ms; --dog-wag: 600ms; }
+.goal-dog[data-mood="running"] { --dog-step: 380ms; --dog-wag: 260ms; }
+.goal-dog[data-mood="excited"] { --dog-step: 300ms; --dog-wag: 180ms; }
+.goal-dog:is([data-mood="walking"], [data-mood="running"], [data-mood="excited"]) .dog-leg {
+  animation: goal-dog-step var(--dog-step) ease-in-out infinite alternate;
+}
+.goal-dog:is([data-mood="walking"], [data-mood="running"], [data-mood="excited"]) :is(.dog-leg-b2, .dog-leg-f1) {
+  animation-direction: alternate-reverse;
+}
+.goal-dog:is([data-mood="walking"], [data-mood="running"], [data-mood="excited"]) .dog-body {
+  animation: goal-dog-bob var(--dog-step) ease-in-out infinite alternate;
+}
+.goal-dog:not([data-mood="sleeping"]) .dog-tail {
+  animation: goal-dog-wag var(--dog-wag, 180ms) ease-in-out infinite alternate;
+}
+.goal-dog:is([data-mood="excited"], [data-mood="celebrating"]) .dog-ear {
+  animation: goal-dog-ear 300ms ease-in-out infinite alternate;
+}
+.goal-dog .dog-tongue { animation: goal-dog-pant 260ms ease-in-out infinite alternate; }
+
+/* Celebrating: jumps for joy. */
+.goal-dog[data-mood="celebrating"] .dog-body {
+  animation: goal-dog-jump 900ms cubic-bezier(0.3, 0, 0.4, 1) infinite;
+}
+.goal-dog[data-mood="celebrating"] .dog-leg-f1,
+.goal-dog[data-mood="celebrating"] .dog-leg-f2 { transform: rotate(-35deg); }
+.goal-dog[data-mood="celebrating"] .dog-leg-b1,
+.goal-dog[data-mood="celebrating"] .dog-leg-b2 { transform: rotate(30deg); }
+
+@keyframes goal-dog-step {
+  from { transform: rotate(-24deg); }
+  to { transform: rotate(24deg); }
+}
+@keyframes goal-dog-bob {
+  from { transform: translateY(0); }
+  to { transform: translateY(-1.5px); }
+}
+@keyframes goal-dog-wag {
+  from { transform: rotate(-18deg); }
+  to { transform: rotate(22deg); }
+}
+@keyframes goal-dog-ear {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-22deg); }
+}
+@keyframes goal-dog-pant {
+  from { transform: scaleY(0.75); }
+  to { transform: scaleY(1.1); }
+}
+@keyframes goal-dog-breathe {
+  0%, 100% { transform: translateY(6px) scale(1, 1); }
+  50% { transform: translateY(6px) scale(1.02, 1.05); }
+}
+@keyframes goal-dog-zzz {
+  0% { opacity: 0; transform: translate(0, 4px); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translate(4px, -6px); }
+}
+@keyframes goal-dog-jump {
+  0%, 100% { transform: translateY(0) scale(1.05, 0.92); }
+  15% { transform: translateY(0) scale(1, 1); }
+  45% { transform: translateY(-9px) rotate(-6deg); }
+  75% { transform: translateY(0) scale(1, 1); }
+}
+
+/* The bar fills from 0 to its value when it mounts; the dog travels with it. */
+.goal-fill {
+  animation: goal-fill 1.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.goal-runner {
+  animation: goal-runner 1.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes goal-fill { from { width: 0%; } }
+@keyframes goal-runner { from { left: 0%; } }
+
+.goal-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.goal-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: skeleton-shimmer 2.2s ease-in-out infinite;
+}
+/* Finish arch: the tape flutters while waiting; once reached it is broken,
+   its loose ends sway and the arch bounces. */
+.goal-finish .goal-tape {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+  animation: goal-tape-flutter 1.8s ease-in-out infinite alternate;
+}
+.goal-finish .goal-tape-broken path {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+  animation: goal-tape-sway 1.2s ease-in-out infinite alternate;
+}
+.goal-finish .goal-tape-broken path + path { animation-direction: alternate-reverse; }
+.goal-finish-reached {
+  transform-origin: 50% 100%;
+  animation: goal-finish-pop 1.4s ease-in-out infinite;
+}
+@keyframes goal-tape-flutter {
+  from { transform: scaleY(1); }
+  to { transform: scaleY(1.6); }
+}
+@keyframes goal-tape-sway {
+  from { transform: rotate(-8deg); }
+  to { transform: rotate(8deg); }
+}
+@keyframes goal-finish-pop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+/* One-off confetti when the month's goal is reached. */
+.goal-confetti {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 60;
+}
+.goal-confetti span {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  animation: goal-confetti-fall var(--fall, 2.6s) cubic-bezier(0.3, 0.6, 0.5, 1) var(--delay, 0s) both;
+}
+@keyframes goal-confetti-fall {
+  from { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  to { transform: translate(var(--drift, 0px), 105vh) rotate(var(--spin, 540deg)); opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goal-dog *,
+  .goal-fill,
+  .goal-runner,
+  .goal-finish,
+  .goal-finish *,
+  .goal-shimmer::after {
+    animation: none !important;
+  }
+  .goal-confetti { display: none; }
+}

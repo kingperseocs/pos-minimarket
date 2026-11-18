@@ -1,12 +1,16 @@
 import type { PreparedReceiptLine } from "@/domain/entities/receiving";
+import type { AuditRepository } from "@/domain/repositories/audit-repository";
 import { ValidationError } from "@/domain/errors";
 import type { PresentationRepository } from "@/domain/repositories/presentation-repository";
 import type { ProductRepository } from "@/domain/repositories/product-repository";
-import type { PurchaseOrderRepository } from "@/domain/repositories/purchase-order-repository";
 import type { ReceivingRepository } from "@/domain/repositories/receiving-repository";
+import type { SupplierRepository } from "@/domain/repositories/supplier-repository";
 import { round2 } from "@/domain/value-objects/money";
+import { storeDateKey } from "@/domain/value-objects/store-time";
 import {
+  discountedLineTotal,
   receiptDiscrepancy,
+  receiptDueDate,
   receiptLineUnitCost,
   receiptLineUnits,
 } from "@/domain/services/receiving";
@@ -19,22 +23,15 @@ export async function receiveGoodsUseCase(
     receiving: ReceivingRepository;
     products: ProductRepository;
     presentations: PresentationRepository;
-    orders: PurchaseOrderRepository;
+    suppliers: SupplierRepository;
+    audit: AuditRepository;
   },
   input: unknown,
   actorId: number,
+  now = new Date(),
 ) {
   const data = receiptSchema.parse(input);
 
-  // Merchandise answering a purchase order comes from that order's supplier.
-  if (data.orderId !== null) {
-    const order = await repos.orders.findById(data.orderId);
-    if (!order) throw new ValidationError("La orden de compra no existe");
-    if (order.status === "cancelled" || order.status === "received") {
-      throw new ValidationError(`La orden #${order.id} ya está cerrada`);
-    }
-    data.supplierId = order.supplierId;
-  }
 
   if (data.docType !== "ninguno" && !data.docNumber) {
     throw new ValidationError("Escribe la serie y número del documento");
@@ -74,10 +71,14 @@ export async function receiveGoodsUseCase(
       throw new ValidationError(`${label}: escribe cuánto pagaste por ${product.name}`);
     }
 
+    // With a volume discount the typed amount is the invoice's before it;
+    // what was paid (and goes into the cost) is recomputed here.
+    const hasDiscount = !line.isBonus && line.discountPercent > 0;
+    const typed = line.isBonus ? 0 : (line.lineTotal ?? 0);
     const prepared = {
       quantity: line.quantity,
       unitsPerPresentation,
-      lineTotal: line.isBonus ? 0 : (line.lineTotal ?? 0),
+      lineTotal: hasDiscount ? discountedLineTotal(typed, line.discountPercent) : typed,
       isBonus: line.isBonus,
     };
     const units = receiptLineUnits(prepared);
@@ -90,6 +91,8 @@ export async function receiveGoodsUseCase(
       units,
       receivedUnits,
       lineTotal: prepared.lineTotal,
+      listTotal: hasDiscount ? typed : null,
+      discountPercent: hasDiscount ? line.discountPercent : 0,
       unitCost: receiptLineUnitCost(prepared),
       isBonus: line.isBonus,
       expiresAt: product.tracksExpiry ? line.expiresAt : null,
@@ -97,16 +100,41 @@ export async function receiveGoodsUseCase(
     });
   }
 
-  return repos.receiving.createReceipt({
+  // Due the day it arrives, or after the supplier's credit days.
+  const supplier =
+    data.supplierId !== null ? await repos.suppliers.findById(data.supplierId) : null;
+  const dueDate = receiptDueDate(
+    storeDateKey(now),
+    supplier?.givesCredit ? supplier.creditDays : null,
+  );
+
+  const total = round2(lines.reduce((sum, line) => sum + line.lineTotal, 0));
+  const result = await repos.receiving.createReceipt({
     supplierId: data.supplierId,
-    orderId: data.orderId,
     docType: data.docType,
     docNumber: data.docNumber,
     note: data.note,
-    total: round2(lines.reduce((sum, line) => sum + line.lineTotal, 0)),
+    total,
+    dueDate,
     lines,
     actorId,
   });
+  // Received and invoiced at once (the admin did both steps).
+  await repos.audit.record({
+    type: "goods_received",
+    actorId,
+    payload: {
+      receiptId: result.id,
+      supplierId: data.supplierId,
+      lines: lines.length,
+      units: lines.reduce((sum, line) => sum + line.receivedUnits, 0),
+      docNumber: data.docNumber,
+      total,
+      withInvoice: true,
+    },
+    occurredAt: now,
+  });
+  return result;
 }
 
 export function listReceiptsUseCase(repo: ReceivingRepository) {

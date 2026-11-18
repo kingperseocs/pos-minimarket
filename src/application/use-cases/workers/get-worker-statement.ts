@@ -1,5 +1,6 @@
 import { InvalidWorkerCredentialsError, TooManyAttemptsError } from "@/domain/errors";
 import type { AuditRepository } from "@/domain/repositories/audit-repository";
+import type { DiscountPolicyRepository } from "@/domain/repositories/discount-policy-repository";
 import type { WorkerRepository } from "@/domain/repositories/worker-repository";
 import { workerStatementSchema } from "@/application/validation/worker";
 
@@ -12,7 +13,11 @@ export const STATEMENT_LOCK_MINUTES = 15;
 // wrong attempts lock the DNI for a while, and errors never reveal whether a
 // DNI is registered.
 export async function getWorkerStatementUseCase(
-  deps: { workers: WorkerRepository; audit: AuditRepository },
+  deps: {
+    workers: WorkerRepository;
+    audit: AuditRepository;
+    policies: DiscountPolicyRepository;
+  },
   input: unknown,
 ) {
   const data = workerStatementSchema.parse(input);
@@ -41,12 +46,25 @@ export async function getWorkerStatementUseCase(
     throw genericError;
   }
 
+  const [policy, history] = await Promise.all([
+    deps.policies.getActive(),
+    deps.workers.purchaseHistory(worker.id, 20),
+  ]);
+
   return {
     fullName: worker.fullName,
     company: worker.company,
     status: worker.status,
-    pointsBalance: worker.pointsBalance,
-    purchases: (await deps.workers.purchaseHistory(worker.id, 20)).map((p) => ({
+    // Negative only after an overdraft (two tills redeeming offline);
+    // shown as 0, it recovers with the next purchases.
+    pointsBalance: Math.max(0, worker.pointsBalance),
+    // How points are earned and redeemed (the "i" next to the balance).
+    pointsRules: policy && {
+      pointsPerSol: policy.pointsPerSol,
+      redeemPointsPerSol: policy.redeemPointsPerSol,
+      minRedeemPoints: policy.minRedeemPoints,
+    },
+    purchases: history.map((p) => ({
       saleId: p.saleId,
       clientCreatedAt: p.clientCreatedAt.toISOString(),
       subtotal: p.subtotal,
@@ -54,6 +72,8 @@ export async function getWorkerStatementUseCase(
       giftTotal: p.giftTotal,
       total: p.total,
       pointsEarned: p.pointsEarned,
+      pointsRedeemed: p.pointsRedeemed,
+      redeemTotal: p.redeemTotal,
     })),
   };
 }

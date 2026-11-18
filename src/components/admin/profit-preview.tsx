@@ -1,21 +1,16 @@
 import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
-import {
-  productMargin,
-  profitWithWorkerDiscount,
-} from "@/domain/services/product-margin";
+import { productMargin } from "@/domain/services/product-margin";
 import { formatSoles } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { InfoPopover, ProfitBreakdown } from "./price-info";
 
-// Live "Utilidad" box in the product form: what is earned per unit, and
-// what is left when an airport worker buys it with their discount.
+// Live "Utilidad" box in the product form: what is earned per unit.
 export function ProfitPreview({
   priceSale,
   priceCost,
-  workerDiscountAmount,
 }: {
   priceSale: number;
   priceCost: number | null;
-  workerDiscountAmount: number;
 }) {
   const margin = productMargin(priceSale, priceCost);
   if (!margin) {
@@ -28,10 +23,6 @@ export function ProfitPreview({
   }
 
   const loses = margin.profit < 0;
-  const withDiscount =
-    workerDiscountAmount > 0
-      ? profitWithWorkerDiscount(priceSale, priceCost, workerDiscountAmount)
-      : null;
 
   return (
     <div
@@ -48,29 +39,26 @@ export function ProfitPreview({
         ) : (
           <TrendingUpIcon className="size-4 text-emerald-600" />
         )}
-        {loses ? "Pierdes" : "Ganas"} {formatSoles(Math.abs(margin.profit))} por
-        unidad
+        <span className="flex-1">
+          {loses ? "Pierdes" : "Ganas"} {formatSoles(Math.abs(margin.profit))}{" "}
+          por unidad
+        </span>
+        <InfoPopover
+          label="Cómo se calcula la ganancia"
+          title="Cómo se calcula"
+          align="end"
+        >
+          <ProfitBreakdown
+            priceSale={priceSale}
+            priceCost={priceCost}
+          />
+        </InfoPopover>
       </div>
       <p className="text-xs text-muted-foreground">
         {formatSoles(priceSale)} − {formatSoles(priceCost!)} ={" "}
         {formatSoles(margin.profit)} · {margin.markupPercent}% sobre el costo ·{" "}
         {margin.marginPercent}% del precio de venta
       </p>
-      {withDiscount !== null && (
-        <p
-          className={cn(
-            "text-xs",
-            withDiscount < 0
-              ? "font-medium text-destructive"
-              : "text-muted-foreground",
-          )}
-        >
-          Con {formatSoles(workerDiscountAmount)} de descuento a trabajadores:{" "}
-          {withDiscount < 0
-            ? `pierdes ${formatSoles(Math.abs(withDiscount))} por unidad`
-            : `ganas ${formatSoles(withDiscount)} por unidad`}
-        </p>
-      )}
     </div>
   );
 }

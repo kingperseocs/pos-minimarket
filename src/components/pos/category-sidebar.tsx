@@ -8,21 +8,28 @@ export type SidebarCategory = {
   value: number;
   label: string;
   icon: string | null;
+  // Main category of a subcategory (null: main). The sidebar lists main
+  // categories; subcategories filter inside them.
+  parentId: number | null;
 };
 
 export function CategorySidebar({
   categories,
   selected,
   onSelect,
+  stockedIds,
 }: {
   categories: SidebarCategory[];
   selected: number | null;
   onSelect: (category: number) => void;
+  // Categories with something on the shop floor; the rest are dimmed.
+  stockedIds?: ReadonlySet<number>;
 }) {
   return (
     <aside className="flex w-24 shrink-0 flex-col gap-2 overflow-y-auto border-r bg-sidebar p-2 sm:w-36 sm:p-3">
       {categories.map((category) => {
         const isSelected = category.value === selected;
+        const isEmpty = stockedIds ? !stockedIds.has(category.value) : false;
         return (
           <button
             key={category.value}
@@ -34,7 +41,9 @@ export function CategorySidebar({
               isSelected
                 ? "bg-brand-orange text-white shadow-sm"
                 : "bg-transparent text-muted-foreground hover:bg-brand-blue/10 hover:text-brand-blue",
+              isEmpty && !isSelected && "opacity-50",
             )}
+            title={isEmpty ? "Sin productos en tienda" : undefined}
           >
             <CategoryGlyph icon={category.icon} className="size-5 sm:size-6" />
             {category.label}

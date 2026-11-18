@@ -3,20 +3,26 @@ import { alias } from "drizzle-orm/pg-core";
 import type {
   GoodsReceipt,
   NewGoodsReceipt,
+  NewReception,
+  ReceiptInvoice,
   NewStockTransfer,
   ReceiptDiscrepancy,
   ReceiptDocType,
   StockTransfer,
 } from "@/domain/entities/receiving";
 import { ValidationError } from "@/domain/errors";
-import { purchaseOrderStatus } from "@/domain/services/purchase-orders";
 import {
   checkTransfer,
+  costAfterInvoice,
   type DiscrepancyResolution,
+  invoiceGap,
   round4,
   weightedAverageCost,
 } from "@/domain/services/receiving";
-import type { ReceivingRepository } from "@/domain/repositories/receiving-repository";
+import type {
+  ReceiptPaymentUpdate,
+  ReceivingRepository,
+} from "@/domain/repositories/receiving-repository";
 import { db } from "@/infrastructure/db/client";
 import {
   goodsReceiptItems,
@@ -24,10 +30,9 @@ import {
   locations,
   productPresentations,
   products,
-  purchaseOrderItems,
-  purchaseOrders,
   receiptDiscrepancies,
   stockLevels,
+  stockMovements,
   stockTransferItems,
   stockTransfers,
   suppliers,
@@ -61,33 +66,6 @@ async function unitsOnHand(tx: Tx, productId: number) {
   return row?.total ?? 0;
 }
 
-// pending → partial → received, from the units the supplier invoiced so far.
-// Units that didn't arrive are tracked apart, as receipt_discrepancies.
-async function refreshOrderStatus(tx: Tx, orderId: number) {
-  const ordered = await tx
-    .select({ productId: purchaseOrderItems.productId, units: purchaseOrderItems.units })
-    .from(purchaseOrderItems)
-    .where(eq(purchaseOrderItems.orderId, orderId));
-  const received = await tx
-    .select({
-      productId: goodsReceiptItems.productId,
-      units: sql<number>`sum(${goodsReceiptItems.units})`.mapWith(Number),
-    })
-    .from(goodsReceiptItems)
-    .innerJoin(goodsReceipts, eq(goodsReceipts.id, goodsReceiptItems.receiptId))
-    .where(eq(goodsReceipts.orderId, orderId))
-    .groupBy(goodsReceiptItems.productId);
-
-  const status = purchaseOrderStatus(
-    new Map(ordered.map((o) => [o.productId, o.units])),
-    new Map(received.map((r) => [r.productId, r.units])),
-  );
-  await tx
-    .update(purchaseOrders)
-    .set({ status, updatedAt: new Date() })
-    .where(eq(purchaseOrders.id, orderId));
-}
-
 export class DrizzleReceivingRepository implements ReceivingRepository {
   async createReceipt(data: NewGoodsReceipt) {
     return db.transaction(async (tx) => {
@@ -98,7 +76,6 @@ export class DrizzleReceivingRepository implements ReceivingRepository {
         .insert(goodsReceipts)
         .values({
           supplierId: data.supplierId,
-          orderId: data.orderId,
           locationId: warehouseId,
           docType: data.docType,
           docNumber: data.docNumber,
@@ -106,6 +83,9 @@ export class DrizzleReceivingRepository implements ReceivingRepository {
           note: data.note,
           createdBy: data.actorId,
           receivedAt: now,
+          dueDate: data.dueDate,
+          invoicedAt: now,
+          invoicedBy: data.actorId,
         })
         .returning({ id: goodsReceipts.id, uuid: goodsReceipts.uuid });
 
@@ -120,6 +100,8 @@ export class DrizzleReceivingRepository implements ReceivingRepository {
           units: line.units,
           receivedUnits: line.receivedUnits,
           lineTotal: line.lineTotal.toFixed(2),
+          listTotal: line.listTotal === null ? null : line.listTotal.toFixed(2),
+          discountPercent: line.discountPercent.toFixed(2),
           unitCost: line.unitCost.toFixed(4),
           isBonus: line.isBonus,
           expiresAt: line.expiresAt,
@@ -198,10 +180,282 @@ export class DrizzleReceivingRepository implements ReceivingRepository {
           .where(eq(products.id, productId));
       }
 
-      if (data.orderId !== null) await refreshOrderStatus(tx, data.orderId);
 
       return { id: receipt.id };
     });
+  }
+
+  async createReception(data: NewReception) {
+    return db.transaction(async (tx) => {
+      const warehouseId = await requireLocation(tx, "warehouse");
+      const now = new Date();
+
+      const [receipt] = await tx
+        .insert(goodsReceipts)
+        .values({
+          supplierId: data.supplierId,
+          locationId: warehouseId,
+          total: null,
+          note: data.note,
+          createdBy: data.actorId,
+          receivedAt: now,
+          invoiceStatus: "pending",
+          invoicePhotoUrl: data.invoicePhotoUrl,
+        })
+        .returning({ id: goodsReceipts.id, uuid: goodsReceipts.uuid });
+
+      // Until the invoice says otherwise, what was counted is what is billed.
+      await tx.insert(goodsReceiptItems).values(
+        data.lines.map((line) => ({
+          receiptId: receipt.id,
+          productId: line.productId,
+          presentationId: line.presentationId,
+          quantity: line.quantity,
+          units: line.receivedUnits,
+          receivedUnits: line.receivedUnits,
+          lineTotal: null,
+          unitCost: null,
+          expiresAt: line.expiresAt,
+          captureSource: line.captureSource,
+        })),
+      );
+
+      // Stock and lots now, so the store can sell it; the cost waits.
+      const productIds = [...new Set(data.lines.map((line) => line.productId))];
+      for (const productId of productIds) {
+        const lines = data.lines.filter((line) => line.productId === productId);
+        const units = lines.reduce((sum, line) => sum + line.receivedUnits, 0);
+        if (units === 0) continue;
+        await recordMovement(tx, {
+          productId,
+          locationId: warehouseId,
+          qtyDelta: units,
+          type: "purchase_receipt",
+          refId: receipt.uuid,
+          unitCost: null,
+          note: "Recepción sin factura",
+          actorId: data.actorId,
+          occurredAt: now,
+        });
+        for (const line of lines) {
+          if (line.expiresAt && line.receivedUnits > 0) {
+            await addToLot(tx, productId, warehouseId, line.expiresAt, line.receivedUnits);
+          }
+        }
+        await tx
+          .update(products)
+          .set({ trackStock: true, updatedAt: now })
+          .where(eq(products.id, productId));
+      }
+
+      return { id: receipt.id };
+    });
+  }
+
+  async findReceiptForInvoice(id: number) {
+    const [row] = await db
+      .select({
+        receipt: goodsReceipts,
+        supplierName: sql<string | null>`coalesce(${suppliers.tradeName}, ${suppliers.businessName})`,
+        createdByName: users.name,
+      })
+      .from(goodsReceipts)
+      .leftJoin(suppliers, eq(suppliers.id, goodsReceipts.supplierId))
+      .leftJoin(users, eq(users.id, goodsReceipts.createdBy))
+      .where(eq(goodsReceipts.id, id))
+      .limit(1);
+    if (!row) return null;
+
+    const lines = await db
+      .select({
+        itemId: goodsReceiptItems.id,
+        productId: goodsReceiptItems.productId,
+        productName: products.name,
+        presentationId: goodsReceiptItems.presentationId,
+        presentationName: productPresentations.name,
+        supplierCode: productPresentations.supplierCode,
+        unitsTotal: productPresentations.unitsTotal,
+        quantity: goodsReceiptItems.quantity,
+        receivedUnits: goodsReceiptItems.receivedUnits,
+        expiresAt: goodsReceiptItems.expiresAt,
+        priceSale: products.priceSale,
+      })
+      .from(goodsReceiptItems)
+      .innerJoin(products, eq(products.id, goodsReceiptItems.productId))
+      .leftJoin(
+        productPresentations,
+        eq(productPresentations.id, goodsReceiptItems.presentationId),
+      )
+      .where(eq(goodsReceiptItems.receiptId, id))
+      .orderBy(goodsReceiptItems.id);
+
+    const { receipt } = row;
+    return {
+      id: receipt.id,
+      supplierId: receipt.supplierId,
+      supplierName: row.supplierName,
+      receivedAt: receipt.receivedAt,
+      createdByName: row.createdByName,
+      note: receipt.note,
+      invoiceStatus: receipt.invoiceStatus,
+      invoicePhotoUrl: receipt.invoicePhotoUrl,
+      lines: lines.map(({ unitsTotal, priceSale, ...line }) => ({
+        ...line,
+        unitsPerPresentation: unitsTotal ?? 1,
+        priceSale: Number(priceSale),
+      })),
+    };
+  }
+
+  async applyInvoice(data: ReceiptInvoice) {
+    return db.transaction(async (tx) => {
+      const [receipt] = await tx
+        .select({
+          uuid: goodsReceipts.uuid,
+          invoiceStatus: goodsReceipts.invoiceStatus,
+        })
+        .from(goodsReceipts)
+        .where(eq(goodsReceipts.id, data.receiptId))
+        .for("update");
+      if (!receipt) throw new ValidationError("El ingreso no existe");
+      if (receipt.invoiceStatus === "registered") {
+        throw new ValidationError(`La factura del ingreso #${data.receiptId} ya fue registrada`);
+      }
+
+      // The received lines get what the invoice says; lines invoiced that
+      // never arrived are added with nothing received.
+      const itemIds: number[] = [];
+      for (const line of data.lines) {
+        const values = {
+          quantity: line.quantity,
+          units: line.units,
+          lineTotal: line.lineTotal.toFixed(2),
+          listTotal: line.listTotal === null ? null : line.listTotal.toFixed(2),
+          discountPercent: line.discountPercent.toFixed(2),
+          unitCost: line.unitCost.toFixed(4),
+          isBonus: line.isBonus,
+        };
+        if (line.itemId !== null) {
+          await tx
+            .update(goodsReceiptItems)
+            .set(values)
+            .where(
+              and(
+                eq(goodsReceiptItems.id, line.itemId),
+                eq(goodsReceiptItems.receiptId, data.receiptId),
+              ),
+            );
+          itemIds.push(line.itemId);
+        } else {
+          const [item] = await tx
+            .insert(goodsReceiptItems)
+            .values({
+              ...values,
+              receiptId: data.receiptId,
+              productId: line.productId,
+              presentationId: line.presentationId,
+              receivedUnits: 0,
+            })
+            .returning({ id: goodsReceiptItems.id });
+          itemIds.push(item.id);
+        }
+      }
+
+      const gaps = data.lines.flatMap((line, index) => {
+        const gap = invoiceGap(line);
+        return gap
+          ? [
+              {
+                receiptId: data.receiptId,
+                receiptItemId: itemIds[index],
+                productId: line.productId,
+                units: gap.units,
+                amount: gap.amount.toFixed(2),
+              },
+            ]
+          : [];
+      });
+      if (gaps.length > 0) await tx.insert(receiptDiscrepancies).values(gaps);
+
+      // The cost of what arrived: on its Kardex movement and in the
+      // product's weighted average.
+      const productIds = [...new Set(data.lines.map((line) => line.productId))];
+      for (const productId of productIds) {
+        const lines = data.lines.filter((line) => line.productId === productId);
+        const units = lines.reduce((sum, line) => sum + line.receivedUnits, 0);
+        if (units === 0) continue;
+        const cost = lines.reduce((sum, line) => sum + line.unitCost * line.receivedUnits, 0);
+
+        const [product] = await tx
+          .select({ priceCost: products.priceCost })
+          .from(products)
+          .where(eq(products.id, productId))
+          .for("update");
+        const newCost = costAfterInvoice({
+          currentCost: product.priceCost === null ? null : Number(product.priceCost),
+          onHand: await unitsOnHand(tx, productId),
+          receivedUnits: units,
+          receivedTotal: cost,
+        });
+
+        await tx
+          .update(stockMovements)
+          .set({ unitCost: round4(cost / units).toFixed(4), note: data.docNumber })
+          .where(
+            and(
+              eq(stockMovements.type, "purchase_receipt"),
+              eq(stockMovements.refId, receipt.uuid),
+              eq(stockMovements.productId, productId),
+            ),
+          );
+        await tx
+          .update(products)
+          .set({
+            priceCost: newCost === null ? null : newCost.toFixed(4),
+            updatedAt: data.at,
+          })
+          .where(eq(products.id, productId));
+      }
+
+      await tx
+        .update(goodsReceipts)
+        .set({
+          docType: data.docType,
+          docNumber: data.docNumber,
+          total: data.total.toFixed(2),
+          dueDate: data.dueDate,
+          invoiceStatus: "registered",
+          invoicedAt: data.at,
+          invoicedBy: data.actorId,
+        })
+        .where(eq(goodsReceipts.id, data.receiptId));
+
+      return { gaps: gaps.length };
+    });
+  }
+
+  async productIdsBySupplier() {
+    const rows = await db
+      .selectDistinct({
+        supplierId: goodsReceipts.supplierId,
+        productId: goodsReceiptItems.productId,
+      })
+      .from(goodsReceiptItems)
+      .innerJoin(goodsReceipts, eq(goodsReceipts.id, goodsReceiptItems.receiptId));
+    const bySupplier: Record<number, number[]> = {};
+    for (const row of rows) {
+      if (row.supplierId === null) continue;
+      (bySupplier[row.supplierId] ??= []).push(row.productId);
+    }
+    return bySupplier;
+  }
+
+  async countPendingInvoices() {
+    const [row] = await db
+      .select({ total: sql<number>`count(*)`.mapWith(Number) })
+      .from(goodsReceipts)
+      .where(eq(goodsReceipts.invoiceStatus, "pending"));
+    return row?.total ?? 0;
   }
 
   async documentExists(
@@ -225,16 +479,58 @@ export class DrizzleReceivingRepository implements ReceivingRepository {
     return row !== undefined;
   }
 
+  async findReceiptPayment(id: number) {
+    const [row] = await db
+      .select({
+        id: goodsReceipts.id,
+        total: goodsReceipts.total,
+        docNumber: goodsReceipts.docNumber,
+        invoiceStatus: goodsReceipts.invoiceStatus,
+        paymentStatus: goodsReceipts.paymentStatus,
+        paidMethod: goodsReceipts.paidMethod,
+      })
+      .from(goodsReceipts)
+      .where(eq(goodsReceipts.id, id))
+      .limit(1);
+    return row ? { ...row, total: row.total === null ? null : Number(row.total) } : null;
+  }
+
+  async setReceiptPayment(data: ReceiptPaymentUpdate) {
+    await db
+      .update(goodsReceipts)
+      .set(
+        data.paid
+          ? {
+              paymentStatus: "paid",
+              paidAt: data.at,
+              paidMethod: data.method,
+              paidBy: data.actorId,
+              paymentNote: data.note,
+            }
+          : {
+              paymentStatus: "pending",
+              paidAt: null,
+              paidMethod: null,
+              paidBy: null,
+              paymentNote: null,
+            },
+      )
+      .where(eq(goodsReceipts.id, data.id));
+  }
+
   async listReceipts(limit: number): Promise<GoodsReceipt[]> {
+    const paidBy = alias(users, "paid_by");
     const rows = await db
       .select({
         receipt: goodsReceipts,
         supplierName: sql<string | null>`coalesce(${suppliers.tradeName}, ${suppliers.businessName})`,
         createdByName: users.name,
+        paidByName: paidBy.name,
       })
       .from(goodsReceipts)
       .leftJoin(suppliers, eq(suppliers.id, goodsReceipts.supplierId))
       .leftJoin(users, eq(users.id, goodsReceipts.createdBy))
+      .leftJoin(paidBy, eq(paidBy.id, goodsReceipts.paidBy))
       .orderBy(desc(goodsReceipts.receivedAt))
       .limit(limit);
     if (rows.length === 0) return [];
@@ -248,6 +544,8 @@ export class DrizzleReceivingRepository implements ReceivingRepository {
         units: goodsReceiptItems.units,
         receivedUnits: goodsReceiptItems.receivedUnits,
         lineTotal: goodsReceiptItems.lineTotal,
+        listTotal: goodsReceiptItems.listTotal,
+        discountPercent: goodsReceiptItems.discountPercent,
         isBonus: goodsReceiptItems.isBonus,
         expiresAt: goodsReceiptItems.expiresAt,
       })
@@ -265,20 +563,33 @@ export class DrizzleReceivingRepository implements ReceivingRepository {
       )
       .orderBy(goodsReceiptItems.id);
 
-    return rows.map(({ receipt, supplierName, createdByName }) => ({
+    return rows.map(({ receipt, supplierName, createdByName, paidByName }) => ({
       id: receipt.id,
       receivedAt: receipt.receivedAt,
       supplierName,
       docType: receipt.docType,
       docNumber: receipt.docNumber,
-      total: Number(receipt.total),
+      total: receipt.total === null ? null : Number(receipt.total),
       note: receipt.note,
       createdByName,
+      invoiceStatus: receipt.invoiceStatus,
+      invoicePhotoUrl: receipt.invoicePhotoUrl,
+      paymentStatus: receipt.paymentStatus,
+      dueDate: receipt.dueDate,
+      paidAt: receipt.paidAt,
+      paidMethod: receipt.paidMethod,
+      paidByName,
+      paymentNote: receipt.paymentNote,
       lines: items
         .filter((item) => item.receiptId === receipt.id)
-        .map(({ receiptId, lineTotal, ...item }) => {
+        .map(({ receiptId, lineTotal, listTotal, discountPercent, ...item }) => {
           void receiptId;
-          return { ...item, lineTotal: Number(lineTotal) };
+          return {
+            ...item,
+            lineTotal: lineTotal === null ? null : Number(lineTotal),
+            listTotal: listTotal === null ? null : Number(listTotal),
+            discountPercent: Number(discountPercent),
+          };
         }),
     }));
   }

@@ -43,12 +43,20 @@ export type SaleRow = {
   // courtesy (then courtesyApprovedByName is set).
   giftTotal: number;
   courtesyApprovedByName: string | null;
+  // To whole soles on discounted sales; 0 otherwise.
+  rounding: number;
   total: number;
   workerName: string | null;
   workerDni: string | null;
   workerVerification: WorkerVerification;
   pointsEarned: number;
+  // Worker points spent on the sale and the soles they took off.
+  pointsRedeemed: number;
+  redeemTotal: number;
   auditFlags: AuditFlag[];
+  // Percentage discount applied to the whole sale (null = none).
+  promoDiscountName: string | null;
+  promoDiscountPercent: number;
   units: number;
   items: {
     id: number;
@@ -144,6 +152,15 @@ export function SalesTable({ sales }: { sales: SaleRow[] }) {
                     </div>
                   )}
                 </div>
+              ) : sale.promoDiscountPercent > 0 ? (
+                <div className="leading-tight">
+                  <div className="max-w-40 truncate">
+                    {sale.promoDiscountName ?? "Descuento"} · {sale.promoDiscountPercent}%
+                  </div>
+                  <div className="text-xs text-emerald-700 tabular-nums dark:text-emerald-400">
+                    −{formatSoles(sale.discountTotal)}
+                  </div>
+                </div>
               ) : (
                 <span className="text-muted-foreground">—</span>
               )}
@@ -210,6 +227,19 @@ export function SalesTable({ sales }: { sales: SaleRow[] }) {
                       <dd className="text-xs text-muted-foreground">
                         {WORKER_VERIFICATION_LABELS[selected.workerVerification]} · +
                         {selected.pointsEarned} puntos
+                        {selected.pointsRedeemed > 0 &&
+                          ` · canjeó ${selected.pointsRedeemed} puntos`}
+                      </dd>
+                    </div>
+                  )}
+                  {selected.promoDiscountPercent > 0 && (
+                    <div className="col-span-2">
+                      <dt className="text-xs text-muted-foreground">
+                        Descuento trabajador
+                      </dt>
+                      <dd className="font-medium">
+                        {selected.promoDiscountName ?? "Descuento"} ·{" "}
+                        {selected.promoDiscountPercent}%
                       </dd>
                     </div>
                   )}
@@ -251,8 +281,12 @@ export function SalesTable({ sales }: { sales: SaleRow[] }) {
                         ) : (
                           item.discountAmount > 0 && (
                             <p className="text-xs text-emerald-700 tabular-nums dark:text-emerald-400">
-                              Trabajador −{formatSoles(item.discountAmount)}
-                              {item.discountUnitAmount > 0 &&
+                              {selected.promoDiscountPercent > 0
+                                ? `${selected.promoDiscountPercent}%`
+                                : "Trabajador"}{" "}
+                              −{formatSoles(item.discountAmount)}
+                              {selected.promoDiscountPercent === 0 &&
+                                item.discountUnitAmount > 0 &&
                                 ` (${Math.round(item.discountAmount / item.discountUnitAmount)} × −${formatSoles(item.discountUnitAmount)})`}
                             </p>
                           )
@@ -279,7 +313,9 @@ export function SalesTable({ sales }: { sales: SaleRow[] }) {
 
               <div className="mt-auto px-4 pb-4">
                 <Separator className="mb-4" />
-                {(selected.discountTotal > 0 || selected.giftTotal > 0) && (
+                {(selected.discountTotal > 0 ||
+                  selected.giftTotal > 0 ||
+                  selected.redeemTotal > 0) && (
                   <div className="mb-2 space-y-1 text-sm">
                     <div className="flex justify-between text-muted-foreground">
                       <span>Subtotal</span>
@@ -287,7 +323,11 @@ export function SalesTable({ sales }: { sales: SaleRow[] }) {
                     </div>
                     {selected.discountTotal > 0 && (
                       <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
-                        <span>Descuento trabajador</span>
+                        <span>
+                          {selected.promoDiscountPercent > 0
+                            ? `Descuento ${selected.promoDiscountPercent}%`
+                            : "Descuento trabajador"}
+                        </span>
                         <span className="tabular-nums">
                           −{formatSoles(selected.discountTotal)}
                         </span>
@@ -298,6 +338,23 @@ export function SalesTable({ sales }: { sales: SaleRow[] }) {
                         <span>{giftLabel(selected)}</span>
                         <span className="tabular-nums">
                           −{formatSoles(selected.giftTotal)}
+                        </span>
+                      </div>
+                    )}
+                    {selected.rounding !== 0 && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Redondeo al sol</span>
+                        <span className="tabular-nums">
+                          {selected.rounding > 0 ? "+" : "−"}
+                          {formatSoles(Math.abs(selected.rounding))}
+                        </span>
+                      </div>
+                    )}
+                    {selected.redeemTotal > 0 && (
+                      <div className="flex justify-between text-brand-orange">
+                        <span>Canje de {selected.pointsRedeemed} puntos</span>
+                        <span className="tabular-nums">
+                          −{formatSoles(selected.redeemTotal)}
                         </span>
                       </div>
                     )}

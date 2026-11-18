@@ -10,7 +10,7 @@ import { DataTable, ID_COLUMN, IdCell } from "@/components/admin/data-table";
 import { PageHeader } from "@/components/admin/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { TableSkeleton } from "@/components/layout/page-skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { CASH_SHIFT_STATUS_LABELS } from "@/domain/entities/cash-shift";
 import { salesStillSyncing, shiftDifferences } from "@/domain/services/cash-shift";
@@ -137,7 +137,7 @@ export default async function CashShiftsPage({ searchParams }: PageProps<"/admin
         description="Cada turno: con cuánto abrió, cuánto debía haber y cuánto se contó al cerrar."
         action={<AuditRangeFilter from={from} to={to} today={today} basePath="/admin/caja" />}
       />
-      <Suspense key={`${from}-${to}`} fallback={<Skeleton className="h-96 rounded-xl" />}>
+      <Suspense key={`${from}-${to}`} fallback={<TableSkeleton />}>
         <ShiftsContent from={from} to={to} />
       </Suspense>
     </div>

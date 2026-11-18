@@ -10,7 +10,7 @@ import type {
   WorkerRepository,
 } from "@/domain/repositories/worker-repository";
 import { db } from "@/infrastructure/db/client";
-import { sales, users, workers } from "@/infrastructure/db/schema";
+import { saleItems, sales, users, workers } from "@/infrastructure/db/schema";
 
 type WorkerRow = typeof workers.$inferSelect & {
   registeredByName?: string | null;
@@ -42,18 +42,27 @@ function selectWorkers() {
     .leftJoin(users, eq(workers.registeredBy, users.id));
 }
 
-// Only sales that actually had a discount count toward the daily cap; a
-// birthday gift is any free line (courtesy_total) in the year.
-const discounted = gt(sales.discountTotal, "0");
+// A birthday gift is any free line (courtesy_total) in the year.
 const withGift = gt(sales.giftTotal, "0");
 
-function usageColumns(dayStart: Date) {
+function usageColumns() {
   return {
-    today: sql<number>`count(*) filter (where ${discounted} and ${sales.clientCreatedAt} >= ${dayStart.toISOString()}::timestamptz)`.mapWith(
-      Number,
-    ),
     gifts: sql<number>`count(*) filter (where ${withGift})`.mapWith(Number),
   };
+}
+
+// Units that took the worker discount today, across all their purchases (the
+// daily allowance): each line keeps its discount total and per-unit discount.
+const discountedUnits = sql<number>`coalesce(sum(round(${saleItems.discountAmount} / nullif(${saleItems.discountUnitAmount}, 0))), 0)`.mapWith(
+  Number,
+);
+
+function discountedUnitsSince(dayStart: Date) {
+  return and(
+    ne(sales.status, "voided"),
+    gte(sales.clientCreatedAt, dayStart),
+    gt(saleItems.discountUnitAmount, "0"),
+  );
 }
 
 export class DrizzleWorkerRepository implements WorkerRepository {
@@ -103,8 +112,10 @@ export class DrizzleWorkerRepository implements WorkerRepository {
         nameSource: data.nameSource,
         company: data.company,
         birthDate: data.birthDate,
-        status: "pending",
-        pendingReason: "new",
+        // Active at once: no admin approval (they can suspend it if misused).
+        status: "active",
+        pendingReason: null,
+        approvedAt: new Date(),
         registeredBy: data.registeredById,
       })
       .onConflictDoNothing({ target: workers.uuid })
@@ -140,40 +151,54 @@ export class DrizzleWorkerRepository implements WorkerRepository {
   }
 
   async discountUsage(workerId: number, dayStart: Date, yearStart: Date) {
-    const [row] = await db
-      .select(usageColumns(dayStart))
-      .from(sales)
-      .where(
-        and(
-          eq(sales.workerId, workerId),
-          ne(sales.status, "voided"),
-          gte(sales.clientCreatedAt, yearStart),
+    const [[row], [units]] = await Promise.all([
+      db
+        .select(usageColumns())
+        .from(sales)
+        .where(
+          and(
+            eq(sales.workerId, workerId),
+            ne(sales.status, "voided"),
+            gte(sales.clientCreatedAt, yearStart),
+          ),
         ),
-      );
+      db
+        .select({ units: discountedUnits })
+        .from(saleItems)
+        .innerJoin(sales, eq(sales.id, saleItems.saleId))
+        .where(and(eq(sales.workerId, workerId), discountedUnitsSince(dayStart))),
+    ]);
 
     return {
-      discountedSalesToday: row?.today ?? 0,
+      discountedUnitsToday: units?.units ?? 0,
       giftUsedThisYear: (row?.gifts ?? 0) > 0,
     };
   }
 
   async offlineSnapshot(dayStart: Date, yearStart: Date): Promise<OfflineWorker[]> {
-    const columns = usageColumns(dayStart);
+    const columns = usageColumns();
     const usage = db
       .select({
         workerId: sales.workerId,
-        today: columns.today.as("today"),
         gifts: columns.gifts.as("gifts"),
       })
       .from(sales)
       .where(and(ne(sales.status, "voided"), gte(sales.clientCreatedAt, yearStart)))
       .groupBy(sales.workerId)
       .as("usage");
+    const unitsToday = db
+      .select({ workerId: sales.workerId, units: discountedUnits.as("units") })
+      .from(saleItems)
+      .innerJoin(sales, eq(sales.id, saleItems.saleId))
+      .where(discountedUnitsSince(dayStart))
+      .groupBy(sales.workerId)
+      .as("units_today");
 
     const rows = await db
-      .select({ worker: workers, today: usage.today, gifts: usage.gifts })
+      .select({ worker: workers, today: unitsToday.units, gifts: usage.gifts })
       .from(workers)
       .leftJoin(usage, eq(usage.workerId, workers.id))
+      .leftJoin(unitsToday, eq(unitsToday.workerId, workers.id))
       .where(ne(workers.status, "rejected"));
 
     return rows.map(({ worker, today, gifts }) => ({
@@ -185,7 +210,7 @@ export class DrizzleWorkerRepository implements WorkerRepository {
       status: worker.status,
       pointsBalance: worker.pointsBalance,
       usage: {
-        discountedSalesToday: Number(today ?? 0),
+        discountedUnitsToday: Number(today ?? 0),
         giftUsedThisYear: Number(gifts ?? 0) > 0,
       },
     }));
@@ -202,6 +227,8 @@ export class DrizzleWorkerRepository implements WorkerRepository {
         giftTotal: sales.giftTotal,
         total: sales.total,
         pointsEarned: sales.pointsEarned,
+        pointsRedeemed: sales.pointsRedeemed,
+        redeemTotal: sales.redeemTotal,
         auditFlags: sales.auditFlags,
       })
       .from(sales)
@@ -215,6 +242,7 @@ export class DrizzleWorkerRepository implements WorkerRepository {
       subtotal: Number(row.subtotal),
       discountTotal: Number(row.discountTotal),
       giftTotal: Number(row.giftTotal),
+      redeemTotal: Number(row.redeemTotal),
       total: Number(row.total),
     }));
   }

@@ -67,6 +67,8 @@ export const CATEGORY_ICON_LABELS: Record<CategoryIcon, string> = {
 export interface Category {
   id: number;
   name: string;
+  // Main category it belongs to (null: it is a main category).
+  parentId: number | null;
   icon: CategoryIcon | null;
   sortOrder: number;
   // Products keep dated lots and are flagged expiryWarningDays before

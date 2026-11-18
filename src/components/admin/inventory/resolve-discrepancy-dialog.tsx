@@ -17,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { DiscrepancyResolution } from "@/domain/services/receiving";
+import { useFormDraft } from "@/hooks/use-form-draft";
+import { DraftControls, toastCleared } from "../form-dialog";
 
 const MISSING: { value: DiscrepancyResolution; label: string; help: string }[] = [
   {
@@ -70,6 +72,32 @@ export function ResolveDiscrepancyDialog({
   const [error, setError] = useState<string | null>(null);
   const chosen = options.find((o) => o.value === status);
 
+  type FormState = { status: DiscrepancyResolution; note: string; expiresAt: string };
+  const blankForm: FormState = { status: options[0].value, note: "", expiresAt: "" };
+  // A half-written resolution survives closing the dialog by accident.
+  const draft = useFormDraft<FormState>({
+    key: `discrepancy:${id}`,
+    values: { status, note, expiresAt },
+    baseline: blankForm,
+    enabled: open,
+  });
+
+  function applyForm(next: FormState) {
+    setStatus(
+      options.some((o) => o.value === next.status) ? next.status : blankForm.status,
+    );
+    setNote(next.note ?? "");
+    setExpiresAt(next.expiresAt ?? "");
+  }
+
+  function handleClear() {
+    const before = { status, note, expiresAt };
+    applyForm(blankForm);
+    draft.clear();
+    setError(null);
+    toastCleared(() => applyForm(before));
+  }
+
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
@@ -80,6 +108,7 @@ export function ResolveDiscrepancyDialog({
         return;
       }
       toast.success("Diferencia resuelta");
+      draft.clear();
       setOpen(false);
     });
   }
@@ -88,6 +117,7 @@ export function ResolveDiscrepancyDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (next) applyForm(draft.restore() ?? blankForm);
         setOpen(next);
         setError(null);
       }}
@@ -126,7 +156,7 @@ export function ResolveDiscrepancyDialog({
 
           {status === "replenished" && tracksExpiry && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor={`gap-expires-${id}`}>Vence el</Label>
+              <Label htmlFor={`gap-expires-${id}`} required>Vence el</Label>
               <Input
                 id={`gap-expires-${id}`}
                 type="date"
@@ -155,6 +185,12 @@ export function ResolveDiscrepancyDialog({
           )}
 
           <DialogFooter>
+            <DraftControls
+              onClear={handleClear}
+              clearDisabled={isPending}
+              draftStatus={draft.status}
+              className="sm:mr-auto"
+            />
             <Button type="submit" disabled={isPending}>
               {isPending ? "Guardando..." : "Confirmar"}
             </Button>

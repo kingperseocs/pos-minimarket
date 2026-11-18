@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/layout/page-skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { STOCK_MOVEMENT_LABELS } from "@/domain/entities/inventory";
 import { STORE_TIME_ZONE } from "@/domain/value-objects/store-time";
@@ -173,7 +173,7 @@ export default async function ProductKardexPage({
   if (!id.success) notFound();
 
   return (
-    <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+    <Suspense fallback={<PageSkeleton />}>
       <KardexContent productId={id.data} />
     </Suspense>
   );

@@ -4,6 +4,7 @@ import { AlertTriangleIcon, LogOutIcon, SparklesIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 import { getMyPoints } from "@/actions/workers";
 import { BirthDateInput } from "@/components/birth-date-input";
+import { PointsInfo } from "@/components/points-info";
 import type { WorkerStatement } from "@/application/use-cases/workers/get-worker-statement";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,9 +59,25 @@ export function MyPointsView() {
         <CardContent className="flex flex-col gap-5">
           <div className="flex items-center gap-3 rounded-xl bg-brand-orange/10 p-4">
             <SparklesIcon className="size-8 text-brand-orange" aria-hidden />
-            <div>
-              <p className="text-sm text-muted-foreground">Tus puntos</p>
+            <div className="flex-1">
+              <p className="flex items-center gap-1 text-sm text-muted-foreground">
+                Tus puntos
+                {statement.pointsRules && (
+                  <span className="ml-1">
+                    <PointsInfo rules={statement.pointsRules} />
+                  </span>
+                )}
+              </p>
               <p className="text-3xl font-bold tabular-nums">{statement.pointsBalance}</p>
+              {statement.pointsRules && statement.pointsRules.redeemPointsPerSol > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Equivalen a{" "}
+                  {formatSoles(
+                    Math.floor(statement.pointsBalance / statement.pointsRules.redeemPointsPerSol),
+                  )}{" "}
+                  de descuento
+                </p>
+              )}
             </div>
           </div>
 
@@ -87,6 +104,12 @@ export function MyPointsView() {
                         {purchase.giftTotal > 0 && " · regalo de cumpleaños 🎂"} · +
                         {purchase.pointsEarned} pts
                       </p>
+                      {purchase.pointsRedeemed > 0 && (
+                        <p className="text-xs font-medium text-brand-orange">
+                          Canjeaste {purchase.pointsRedeemed} pts = −
+                          {formatSoles(purchase.redeemTotal)}
+                        </p>
+                      )}
                     </div>
                     <span className="font-semibold tabular-nums">
                       {formatSoles(purchase.total)}

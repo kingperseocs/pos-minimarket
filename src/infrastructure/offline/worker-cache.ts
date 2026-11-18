@@ -1,4 +1,5 @@
 import type { WorkerDiscountUsage } from "@/domain/entities/worker";
+import { discountedQuantity } from "@/domain/services/sale-pricing";
 import { storeDateKey } from "@/domain/value-objects/store-time";
 import { getOfflineDb } from "./db";
 import type { CachedWorker, WorkerSnapshotRecord } from "./types";
@@ -58,13 +59,36 @@ export async function localDiscountUsage(
   const today = storeDateKey(new Date());
   const year = today.slice(0, 4);
 
-  let { discountedSalesToday, giftUsedThisYear } = worker.usage;
+  // Snapshots cached before the daily allowance have no unit count.
+  let discountedUnitsToday = worker.usage.discountedUnitsToday ?? 0;
+  let { giftUsedThisYear } = worker.usage;
   for (const sale of pending) {
     if (sale.workerId !== worker.id) continue;
     const key = storeDateKey(new Date(sale.clientCreatedAt));
-    if (sale.discountTotal && key === today) discountedSalesToday++;
+    if (key === today) {
+      for (const line of sale.items) {
+        discountedUnitsToday += discountedQuantity({
+          discountAmount: line.discountAmount ?? 0,
+          discountUnitAmount: line.discountUnitAmount ?? 0,
+        });
+      }
+    }
     if (sale.giftTotal && key.startsWith(year)) giftUsedThisYear = true;
   }
 
-  return { discountedSalesToday, giftUsedThisYear };
+  return { discountedUnitsToday, giftUsedThisYear };
+}
+
+// Points balance from the snapshot minus what this device's sales still
+// waiting to sync redeemed, so the same points can't be spent twice at this
+// till during an outage. Points those sales earned are not counted until the
+// server confirms them.
+export async function localPointsBalance(worker: CachedWorker): Promise<number> {
+  const db = await getOfflineDb();
+  const pending = await db.getAll("pendingSales");
+  return pending.reduce(
+    (balance, sale) =>
+      sale.workerId === worker.id ? balance - (sale.pointsRedeemed ?? 0) : balance,
+    worker.pointsBalance,
+  );
 }

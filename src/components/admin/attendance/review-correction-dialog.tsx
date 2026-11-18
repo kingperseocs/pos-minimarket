@@ -64,7 +64,7 @@ export function ReviewCorrectionDialog({ correction }: { correction: CorrectionR
             <div className="text-lg font-semibold tabular-nums">{correction.newValue}</div>
           </div>
         </div>
-        <p className="text-sm">
+        <p className="text-sm break-words whitespace-pre-wrap">
           <span className="text-muted-foreground">Motivo:</span> {correction.reason}
         </p>
         <div className="flex flex-col gap-2">

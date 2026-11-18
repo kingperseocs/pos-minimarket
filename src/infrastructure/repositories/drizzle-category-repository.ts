@@ -20,6 +20,7 @@ function toCategory(row: typeof categories.$inferSelect): Category {
   return {
     id: row.id,
     name: row.name,
+    parentId: row.parentId,
     icon: row.icon as CategoryIcon | null,
     sortOrder: row.sortOrder,
     tracksExpiry: row.tracksExpiry,
@@ -89,6 +90,15 @@ export class DrizzleCategoryRepository implements CategoryRepository {
       .select({ id: categories.id })
       .from(categories)
       .where(excludeId ? and(sameName, ne(categories.id, excludeId)) : sameName)
+      .limit(1);
+    return row !== undefined;
+  }
+
+  async hasSubcategories(id: number): Promise<boolean> {
+    const [row] = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.parentId, id))
       .limit(1);
     return row !== undefined;
   }

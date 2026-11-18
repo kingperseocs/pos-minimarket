@@ -2,10 +2,10 @@
 
 import {
   CalendarClockIcon,
-  ClipboardListIcon,
   IdCardIcon,
   LayoutDashboardIcon,
   PackageIcon,
+  PercentIcon,
   ReceiptTextIcon,
   ShieldCheckIcon,
   StoreIcon,
@@ -40,18 +40,18 @@ const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboardIcon },
   { href: "/admin/sales", label: "Ventas", icon: ReceiptTextIcon },
   { href: "/admin/caja", label: "Cierres de caja", icon: WalletIcon },
-  { href: "/admin/asistencia", label: "Asistencia", icon: CalendarClockIcon },
   { href: "/admin/categories", label: "Categorías", icon: TagsIcon },
   { href: "/admin/products", label: "Productos", icon: PackageIcon },
-  { href: "/admin/compras", label: "Compras", icon: ClipboardListIcon },
+  { href: "/admin/descuentos", label: "Descuentos", icon: PercentIcon },
   { href: "/admin/inventory", label: "Inventario", icon: WarehouseIcon },
   { href: "/admin/suppliers", label: "Proveedores", icon: TruckIcon },
   { href: "/admin/users", label: "Usuarios", icon: UsersIcon },
   {
     href: "/admin/workers",
-    label: "Trabajadores aeropuerto",
+    label: "Aeropuerto",
     icon: IdCardIcon,
   },
+  { href: "/admin/asistencia", label: "Asistencia", icon: CalendarClockIcon },
   { href: "/admin/audit", label: "Auditoría", icon: ShieldCheckIcon },
 ];
 

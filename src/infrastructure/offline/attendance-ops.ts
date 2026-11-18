@@ -1,5 +1,6 @@
 import type { AttendanceTodayState } from "@/domain/entities/attendance";
 import { SUSPICIOUS_CLOCK_MS } from "@/domain/entities/attendance";
+import { clockInBlockedMessage, clockInWindow } from "@/domain/services/attendance";
 import { storeDateKey } from "@/domain/value-objects/store-time";
 import { getOfflineDb } from "./db";
 import type { AttendanceOpType, LocalAttendance, PendingAttendanceOp } from "./types";
@@ -127,9 +128,12 @@ export async function clockIn(userId: number) {
   const { movedBack } = await touchDeviceClock();
   const state = await getLocalAttendance(userId);
   const now = new Date();
+  // Same window as the server, with the schedule cached on the device.
+  const clockWindow = clockInWindow(now, state.schedules);
+  if (!clockWindow.allowed) throw new Error(clockInBlockedMessage(clockWindow));
   const current = {
     uuid: crypto.randomUUID(),
-    workDate: storeDateKey(now),
+    workDate: storeDateKey(clockWindow.shift.start),
     clockInAt: now.toISOString(),
   };
   const serverTime = await submit("clock_in", userId, {

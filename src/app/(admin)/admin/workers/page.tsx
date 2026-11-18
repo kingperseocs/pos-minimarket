@@ -8,6 +8,7 @@ import {
 } from "@/components/admin/workers/discount-policy-card";
 import { WorkerStatusTabs } from "@/components/admin/workers/worker-status-tabs";
 import { WorkerTable } from "@/components/admin/workers/worker-table";
+import { TableSkeleton } from "@/components/layout/page-skeleton";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DiscountPolicy } from "@/domain/entities/discount-policy";
 import type { WorkerStatus } from "@/domain/entities/worker";
@@ -16,10 +17,11 @@ import {
   workerRepository,
 } from "@/infrastructure/repositories";
 
-const STATUSES: WorkerStatus[] = ["pending", "active", "suspended", "rejected"];
+// No "pending": registrations are active at once.
+const STATUSES: WorkerStatus[] = ["active", "suspended", "rejected"];
 
 const EMPTY_MESSAGES: Record<WorkerStatus, string> = {
-  pending: "No hay trabajadores por aprobar. Los registros que hagan los cajeros aparecerán aquí.",
+  pending: "No hay trabajadores por revisar.",
   active: "Aún no hay trabajadores activos.",
   suspended: "No hay trabajadores suspendidos.",
   rejected: "No hay registros rechazados.",
@@ -27,9 +29,10 @@ const EMPTY_MESSAGES: Record<WorkerStatus, string> = {
 
 function toPolicyView(policy: DiscountPolicy): PolicyView {
   return {
-    maxDiscountedUnitsPerSale: policy.maxDiscountedUnitsPerSale,
-    maxDiscountedSalesPerDay: policy.maxDiscountedSalesPerDay,
+    maxDiscountedUnitsPerDay: policy.maxDiscountedUnitsPerDay,
     pointsPerSol: policy.pointsPerSol,
+    redeemPointsPerSol: policy.redeemPointsPerSol,
+    minRedeemPoints: policy.minRedeemPoints,
     birthdayGiftMaxAmount: policy.birthdayGiftMaxAmount,
     createdAt: policy.createdAt.toISOString(),
     createdByName: policy.createdByName ?? null,
@@ -42,8 +45,8 @@ const HOW_IT_WORKS = [
     body: "Con el DNI, la empresa y la fecha de nacimiento del trabajador (de su DNI).",
   },
   {
-    title: "2. Tú apruebas",
-    body: "Revisa los datos en «Por aprobar». Sin tu aprobación no hay descuento.",
+    title: "2. Se activa al instante",
+    body: "Desde su primera compra ya tiene descuento. Si ves mal uso, suspéndelo con ⋮ → Suspender.",
   },
   {
     title: "3. Descuento en caja",
@@ -59,9 +62,7 @@ async function WorkersContent({ statusParam }: { statusParam: unknown }) {
 
   const status: WorkerStatus = STATUSES.includes(statusParam as WorkerStatus)
     ? (statusParam as WorkerStatus)
-    : counts.pending > 0
-      ? "pending"
-      : "active";
+    : "active";
   const { workers } = await listWorkersUseCase(workerRepository, status);
 
   return (
@@ -115,7 +116,7 @@ export default async function AdminWorkersPage({
         fallback={
           <>
             <Skeleton className="h-20 rounded-xl" />
-            <Skeleton className="h-96 rounded-xl" />
+            <TableSkeleton />
           </>
         }
       >

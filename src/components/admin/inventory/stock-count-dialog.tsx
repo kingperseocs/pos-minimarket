@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  type DialogHandle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +24,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { StockLot } from "@/domain/entities/inventory";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import { cn } from "@/lib/utils";
+import { DraftControls, toastCleared } from "../form-dialog";
 import {
   type LotLine,
   LotLinesField,
@@ -41,6 +44,7 @@ export function StockCountDialog({
   tracksExpiry = false,
   lots = [],
   trigger,
+  handle,
 }: {
   productId: number;
   productName: string;
@@ -50,7 +54,9 @@ export function StockCountDialog({
   // Expiry-controlled: counted by expiry date.
   tracksExpiry?: boolean;
   lots?: StockLot[];
-  trigger: React.ReactElement;
+  trigger?: React.ReactElement;
+  // Without a trigger, opened through `handle` (a row's "⋮" menu).
+  handle?: DialogHandle;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -78,10 +84,40 @@ export function StockCountDialog({
   const delta = countedNumber === null ? null : countedNumber - current;
   const needsNote = !isOpening && delta !== null && delta !== 0;
 
+  const blankForm = {
+    locationId: (locations[0]?.id ?? null) as number | null,
+    typedCount: "",
+    note: "",
+    lotLines: linesFor(locations[0]?.id ?? null),
+  };
+  type FormState = typeof blankForm;
+  // A count half-done survives closing the dialog by accident.
+  const draft = useFormDraft<FormState>({
+    key: `stock-count:${productId}`,
+    values: { locationId, typedCount, note, lotLines },
+    baseline: blankForm,
+    enabled: open,
+  });
+
+  function applyForm(next: FormState) {
+    const location = locations.some((l) => l.id === next.locationId)
+      ? next.locationId
+      : blankForm.locationId;
+    setLocationId(location);
+    setCounted(next.typedCount ?? "");
+    setNote(next.note ?? "");
+    setLotLines(next.lotLines?.length ? next.lotLines : linesFor(location));
+  }
+
   function reset() {
-    setCounted("");
-    setNote("");
-    setLotLines(linesFor(locationId));
+    applyForm(blankForm);
+  }
+
+  function handleClear() {
+    const before = { locationId, typedCount, note, lotLines };
+    reset();
+    draft.clear();
+    toastCleared(() => applyForm(before));
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -107,6 +143,7 @@ export function StockCountDialog({
         const d = result.data.delta;
         toast.success(`Ajuste registrado (${d > 0 ? "+" : ""}${d})`);
       }
+      draft.clear();
       reset();
       setOpen(false);
     });
@@ -116,11 +153,12 @@ export function StockCountDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (next) applyForm(draft.restore() ?? blankForm);
         setOpen(next);
-        reset();
       }}
+      handle={handle}
     >
-      <DialogTrigger render={trigger} />
+      {trigger && <DialogTrigger render={trigger} />}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Contar stock</DialogTitle>
@@ -128,7 +166,7 @@ export function StockCountDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="location">Ubicación</Label>
+            <Label htmlFor="location" required>Ubicación</Label>
             <Select
               value={locationId}
               onValueChange={(v) => {
@@ -152,12 +190,12 @@ export function StockCountDialog({
 
           {tracksExpiry ? (
             <div className="flex flex-col gap-2">
-              <Label>Unidades contadas por fecha de vencimiento</Label>
+              <Label required>Unidades contadas por fecha de vencimiento</Label>
               <LotLinesField lines={lotLines} onChange={setLotLines} />
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="counted">Unidades contadas</Label>
+              <Label htmlFor="counted" required>Unidades contadas</Label>
               <Input
                 id="counted"
                 type="number"
@@ -202,8 +240,8 @@ export function StockCountDialog({
 
           {!isOpening && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="note">
-                Motivo {needsNote ? "(obligatorio)" : "(opcional)"}
+              <Label htmlFor="note" required={needsNote} optional={!needsNote}>
+                Motivo
               </Label>
               <Input
                 id="note"
@@ -217,6 +255,12 @@ export function StockCountDialog({
           )}
 
           <DialogFooter>
+            <DraftControls
+              onClear={handleClear}
+              clearDisabled={isPending}
+              draftStatus={draft.status}
+              className="sm:mr-auto"
+            />
             <Button type="submit" disabled={isPending || !locationId}>
               {isPending ? "Guardando..." : "Registrar conteo"}
             </Button>

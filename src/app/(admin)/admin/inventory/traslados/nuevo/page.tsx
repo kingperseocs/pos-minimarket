@@ -6,7 +6,7 @@ import { TransferForm } from "@/components/admin/inventory/transfer-form";
 import { PageHeader } from "@/components/admin/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/layout/page-skeleton";
 
 async function NewTransferContent() {
   const available = await loadTransferFormData();
@@ -50,7 +50,7 @@ async function NewTransferContent() {
 
 export default function NewTransferPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+    <Suspense fallback={<PageSkeleton />}>
       <NewTransferContent />
     </Suspense>
   );

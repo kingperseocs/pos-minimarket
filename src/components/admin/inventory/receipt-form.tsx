@@ -4,11 +4,13 @@ import { GiftIcon, PlusIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { receiveGoods } from "@/actions/inventory";
+import { receiveGoods, receiveShipment } from "@/actions/inventory";
+import { DraftControls, toastCleared } from "@/components/admin/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PaperNote } from "@/components/ui/paper-note";
 import {
   Select,
   SelectContent,
@@ -22,13 +24,20 @@ import {
   type ReceiptDocType,
 } from "@/domain/entities/receiving";
 import { round2 } from "@/domain/value-objects/money";
+import { productMargin } from "@/domain/services/product-margin";
+import {
+  MAX_RECEIPT_DISCOUNT_PERCENT,
+  discountedLineTotal,
+} from "@/domain/services/receiving";
 import { formatSoles } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { QuantityStepper } from "@/components/scanner/quantity-stepper";
 import { ScanHint, useScanFlash } from "@/components/scanner/scanner-status";
 import { buildBarcodeIndex } from "@/domain/services/barcode-scan";
 import type { CaptureSource } from "@/domain/value-objects/capture-source";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import { useScanner } from "@/hooks/use-scanner";
+import { InvoicePhotoField } from "./invoice-photo-field";
 
 export type ReceiptProductOption = {
   id: number;
@@ -36,6 +45,10 @@ export type ReceiptProductOption = {
   categoryId: number;
   tracksExpiry: boolean;
   barcode: string | null;
+  imageUrl?: string | null;
+  // Price at the till, to show the profit per unit while receiving. Not
+  // sent to the Almacén, which doesn't handle money.
+  priceSale?: number;
 };
 export type ReceiptPresentationOption = {
   id: number;
@@ -43,23 +56,13 @@ export type ReceiptPresentationOption = {
   name: string;
   unitsTotal: number;
   barcode: string | null;
+  // The supplier's code for this pack (800436), to tell it on the invoice.
+  supplierCode: string | null;
 };
 export type ReceiptSupplierOption = {
   id: number;
   name: string;
   categoryIds: number[];
-};
-// An open purchase order, with what is still missing from it.
-export type ReceiptOrderOption = {
-  id: number;
-  supplierId: number;
-  label: string;
-  lines: {
-    productId: number;
-    presentationId: number | null;
-    quantity: number;
-    estimatedTotal: number | null;
-  }[];
 };
 
 // Select values are strings; these stand for "no supplier" / "by the unit".
@@ -72,6 +75,8 @@ type Line = {
   presentation: string;
   quantity: string;
   lineTotal: string;
+  // Supplier's volume discount (%); with it, lineTotal is before discount.
+  discountPercent: string;
   isBonus: boolean;
   expiresAt: string;
   // Unticked when something is missing (or extra): then `received` says
@@ -88,6 +93,7 @@ const newLine = (): Line => ({
   presentation: UNIT,
   quantity: "",
   lineTotal: "",
+  discountPercent: "",
   isBonus: false,
   expiresAt: "",
   complete: true,
@@ -95,60 +101,52 @@ const newLine = (): Line => ({
   captureSource: "manual",
 });
 
-function linesFromOrder(order: ReceiptOrderOption): Line[] {
-  return order.lines.map((line) => ({
-    ...newLine(),
-    productId: String(line.productId),
-    presentation: line.presentationId === null ? UNIT : String(line.presentationId),
-    quantity: String(line.quantity),
-    lineTotal: line.estimatedTotal === null ? "" : String(line.estimatedTotal),
-  }));
+// The discount typed on a line, kept within what the server accepts.
+function discountOf(line: Line) {
+  const percent = Number(line.discountPercent) || 0;
+  return line.isBonus || percent <= 0
+    ? 0
+    : Math.min(percent, MAX_RECEIPT_DISCOUNT_PERCENT);
+}
+
+// What is paid for a line: the typed amount, less the supplier's discount.
+function paidFor(line: Line) {
+  if (line.isBonus) return 0;
+  const typed = Number(line.lineTotal) || 0;
+  const discount = discountOf(line);
+  return discount > 0 ? discountedLineTotal(typed, discount) : typed;
 }
 
 // Merchandise arriving at the Almacén: supplier and document, then one line
 // per product (and per expiry date / bonus).
+// - "full" (admin): what arrived and its invoice at once.
+// - "reception" (Almacén): only what arrived, counted, plus a photo of the
+//   invoice; no prices. The admin registers the invoice afterwards.
 export function ReceiptForm({
   products,
   presentations,
   suppliers,
-  orders,
-  initialOrderId,
   doneHref,
+  mode = "full",
 }: {
   products: ReceiptProductOption[];
   presentations: ReceiptPresentationOption[];
   suppliers: ReceiptSupplierOption[];
-  orders: ReceiptOrderOption[];
-  // Coming from an order's page ("Registrar lo que llegó").
-  initialOrderId?: number;
   // Where to go once saved (admin history or the warehouse home).
   doneHref: string;
+  mode?: "full" | "reception";
 }) {
+  const reception = mode === "reception";
   const router = useRouter();
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const initialOrder = orders.find((o) => o.id === initialOrderId);
-  const [orderId, setOrderId] = useState(
-    initialOrder ? String(initialOrder.id) : NONE,
-  );
-  const [supplier, setSupplier] = useState(
-    initialOrder ? String(initialOrder.supplierId) : NONE,
-  );
+  const [supplier, setSupplier] = useState(NONE);
   const [docType, setDocType] = useState<ReceiptDocType>("factura");
   const [docNumber, setDocNumber] = useState("");
   const [note, setNote] = useState("");
-  const [lines, setLines] = useState<Line[]>(() =>
-    initialOrder ? linesFromOrder(initialOrder) : [newLine()],
-  );
+  const [lines, setLines] = useState<Line[]>(() => [newLine()]);
 
-  // Picking an order fills its supplier and what is still missing from it;
-  // the lines can then be corrected to what actually arrived.
-  function chooseOrder(value: string) {
-    setOrderId(value);
-    const order = orders.find((o) => String(o.id) === value);
-    if (!order) return;
-    setSupplier(String(order.supplierId));
-    setLines(linesFromOrder(order));
-  }
   const [error, setError] = useState<string | null>(null);
 
   // The chosen supplier's products first (by the categories it delivers).
@@ -168,12 +166,55 @@ export function ReceiptForm({
       : (presentations.find((p) => String(p.id) === line.presentation)
           ?.unitsTotal ?? 1);
 
-  const total = round2(
-    lines.reduce(
-      (sum, line) => sum + (line.isBonus ? 0 : Number(line.lineTotal) || 0),
-      0,
-    ),
-  );
+  const total = round2(lines.reduce((sum, line) => sum + paidFor(line), 0));
+
+  // What the page starts with.
+  const blankForm = {
+    supplier: NONE,
+    docType: "factura" as ReceiptDocType,
+    docNumber: "",
+    note: "",
+    lines: [newLine()],
+  };
+  type FormState = typeof blankForm;
+  // A delivery half-registered survives leaving the page or reloading it.
+  const draft = useFormDraft<FormState>({
+    key: `${reception ? "reception" : "receipt"}:new`,
+    values: { supplier, docType, docNumber, note, lines },
+    baseline: blankForm,
+    enabled: true,
+    onRestore: applyForm,
+  });
+
+  function applyForm(next: FormState) {
+    // Drop what no longer exists: a removed supplier, product or
+    // presentation.
+    setSupplier(
+      suppliers.some((s) => String(s.id) === next.supplier) ? next.supplier : NONE,
+    );
+    setDocType(RECEIPT_DOC_TYPES.includes(next.docType) ? next.docType : "factura");
+    setDocNumber(next.docNumber ?? "");
+    setNote(next.note ?? "");
+    const restored = (next.lines ?? []).map((line) => ({
+      ...newLine(),
+      ...line,
+      productId: products.some((p) => String(p.id) === line.productId)
+        ? line.productId
+        : "",
+      presentation: presentations.some((p) => String(p.id) === line.presentation)
+        ? line.presentation
+        : UNIT,
+    }));
+    setLines(restored.length > 0 ? restored : [newLine()]);
+  }
+
+  function handleClear() {
+    const before = { supplier, docType, docNumber, note, lines };
+    applyForm(blankForm);
+    draft.clear();
+    setError(null);
+    toastCleared(() => applyForm(before));
+  }
 
   function update(key: string, patch: Partial<Line>) {
     setLines((prev) =>
@@ -242,8 +283,32 @@ export function ReceiptForm({
     event.preventDefault();
     setError(null);
     startTransition(async () => {
+      if (reception) {
+        const result = await receiveShipment({
+          supplierId: supplier === NONE ? null : Number(supplier),
+          note,
+          invoicePhotoUrl: photoUrl,
+          lines: lines.map((line) => ({
+            productId: line.productId,
+            presentationId: line.presentation === UNIT ? null : line.presentation,
+            quantity: line.quantity,
+            expiresAt: productOf(line)?.tracksExpiry ? line.expiresAt : null,
+            captureSource: line.captureSource,
+          })),
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        toast.success(`Recepción #${result.data.id} registrada`, {
+          description: "Ya está en el Almacén. El administrador registrará la factura.",
+        });
+        draft.clear();
+        setPhotoUrl(null);
+        router.push(doneHref);
+        return;
+      }
       const result = await receiveGoods({
-        orderId: orderId === NONE ? null : Number(orderId),
         supplierId: supplier === NONE ? null : Number(supplier),
         docType,
         docNumber: docType === "ninguno" ? null : docNumber,
@@ -253,6 +318,7 @@ export function ReceiptForm({
           presentationId: line.presentation === UNIT ? null : line.presentation,
           quantity: line.quantity,
           lineTotal: line.isBonus ? null : line.lineTotal,
+          discountPercent: line.isBonus ? 0 : line.discountPercent,
           isBonus: line.isBonus,
           receivedUnits: line.complete ? null : line.received,
           expiresAt: productOf(line)?.tracksExpiry ? line.expiresAt : null,
@@ -264,6 +330,7 @@ export function ReceiptForm({
         return;
       }
       toast.success(`Ingreso #${result.data.id} registrado en el Almacén`);
+      draft.clear();
       router.push(doneHref);
     });
   }
@@ -272,39 +339,13 @@ export function ReceiptForm({
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
       <Card>
         <CardContent className="grid gap-4 sm:grid-cols-3">
-          {orders.length > 0 && (
-            <div className="flex flex-col gap-2 sm:col-span-3">
-              <Label htmlFor="receipt-order">¿Viene de una orden de compra?</Label>
-              <Select
-                value={orderId}
-                onValueChange={(value) => value && chooseOrder(value as string)}
-                items={[
-                  { value: NONE, label: "No, ingreso sin orden" },
-                  ...orders.map((o) => ({ value: String(o.id), label: o.label })),
-                ]}
-              >
-                <SelectTrigger id="receipt-order" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>No, ingreso sin orden</SelectItem>
-                  {orders.map((o) => (
-                    <SelectItem key={o.id} value={String(o.id)}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="receipt-supplier">Proveedor</Label>
+            <Label htmlFor="receipt-supplier" required={reception}>Proveedor</Label>
             <Select
-              disabled={orderId !== NONE}
               value={supplier}
               onValueChange={(value) => value && setSupplier(value as string)}
               items={[
-                { value: NONE, label: "Sin proveedor" },
+                { value: NONE, label: reception ? "Elige el proveedor" : "Sin proveedor" },
                 ...suppliers.map((s) => ({ value: String(s.id), label: s.name })),
               ]}
             >
@@ -312,7 +353,7 @@ export function ReceiptForm({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE}>Sin proveedor</SelectItem>
+                {!reception && <SelectItem value={NONE}>Sin proveedor</SelectItem>}
                 {suppliers.map((s) => (
                   <SelectItem key={s.id} value={String(s.id)}>
                     {s.name}
@@ -321,6 +362,16 @@ export function ReceiptForm({
               </SelectContent>
             </Select>
           </div>
+          {reception ? (
+            <div className="sm:col-span-2">
+              <InvoicePhotoField
+                value={photoUrl}
+                onChange={setPhotoUrl}
+                onUploadingChange={setUploadingPhoto}
+              />
+            </div>
+          ) : (
+          <>
           <div className="flex flex-col gap-2">
             <Label htmlFor="receipt-doc-type">Documento</Label>
             <Select
@@ -344,7 +395,7 @@ export function ReceiptForm({
             </Select>
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="receipt-doc-number">Serie y número</Label>
+            <Label htmlFor="receipt-doc-number" required={docType !== "ninguno"}>Serie y número</Label>
             <Input
               id="receipt-doc-number"
               placeholder="F020-00014194"
@@ -355,6 +406,8 @@ export function ReceiptForm({
               className="font-mono uppercase"
             />
           </div>
+          </>
+          )}
         </CardContent>
       </Card>
 
@@ -374,9 +427,12 @@ export function ReceiptForm({
           const ownPresentations = presentations.filter(
             (p) => String(p.productId) === line.productId,
           );
-          const perUnit =
-            !line.isBonus && units > 0 && Number(line.lineTotal) > 0
-              ? Number(line.lineTotal) / units
+          const paid = paidFor(line);
+          const discount = discountOf(line);
+          const perUnit = !line.isBonus && units > 0 && paid > 0 ? paid / units : null;
+          const margin =
+            !reception && perUnit !== null && product?.priceSale !== undefined
+              ? productMargin(product.priceSale, perUnit)
               : null;
           return (
             <Card
@@ -390,7 +446,7 @@ export function ReceiptForm({
               <CardContent className="flex flex-col gap-3">
                 <div className="flex items-end gap-2">
                   <div className="flex flex-1 flex-col gap-2">
-                    <Label htmlFor={`product-${line.key}`}>Producto {index + 1}</Label>
+                    <Label htmlFor={`product-${line.key}`} required>Producto {index + 1}</Label>
                     <Select
                       value={line.productId || null}
                       onValueChange={(value) =>
@@ -444,7 +500,7 @@ export function ReceiptForm({
                         { value: UNIT, label: "Unidades" },
                         ...ownPresentations.map((p) => ({
                           value: String(p.id),
-                          label: `${p.name} (${p.unitsTotal} und)`,
+                          label: `${p.name} (${p.unitsTotal} und)${p.supplierCode ? ` · ${p.supplierCode}` : ""}`,
                         })),
                       ]}
                     >
@@ -456,13 +512,20 @@ export function ReceiptForm({
                         {ownPresentations.map((p) => (
                           <SelectItem key={p.id} value={String(p.id)}>
                             {p.name} ({p.unitsTotal} und)
+                            {p.supplierCode && (
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {p.supplierCode}
+                              </span>
+                            )}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor={`quantity-${line.key}`}>Cantidad</Label>
+                    <Label htmlFor={`quantity-${line.key}`} required>
+                      {reception ? "Cantidad que llegó" : "Cantidad"}
+                    </Label>
                     <QuantityStepper
                       id={`quantity-${line.key}`}
                       min={1}
@@ -471,8 +534,12 @@ export function ReceiptForm({
                       required
                     />
                   </div>
+                  {!reception && (
+                  <>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor={`total-${line.key}`}>Pagaste (S/)</Label>
+                    <Label htmlFor={`total-${line.key}`} required={!line.isBonus}>
+                      {discount > 0 ? "Total sin desc. (S/)" : "Pagaste (S/)"}
+                    </Label>
                     <Input
                       id={`total-${line.key}`}
                       type="number"
@@ -486,9 +553,28 @@ export function ReceiptForm({
                       required={!line.isBonus}
                     />
                   </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor={`discount-${line.key}`} optional>
+                      Desc. %
+                    </Label>
+                    <Input
+                      id={`discount-${line.key}`}
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={MAX_RECEIPT_DISCOUNT_PERCENT}
+                      step="0.5"
+                      placeholder="Ej. 8"
+                      value={line.isBonus ? "" : line.discountPercent}
+                      onChange={(e) => update(line.key, { discountPercent: e.target.value })}
+                      disabled={line.isBonus}
+                    />
+                  </div>
+                  </>
+                  )}
                   {product?.tracksExpiry && (
                     <div className="flex flex-col gap-2">
-                      <Label htmlFor={`expires-${line.key}`}>Vence el</Label>
+                      <Label htmlFor={`expires-${line.key}`} required>Vence el</Label>
                       <Input
                         id={`expires-${line.key}`}
                         type="date"
@@ -500,6 +586,14 @@ export function ReceiptForm({
                   )}
                 </div>
 
+                {reception ? (
+                  units > 0 && (
+                    <p className="text-right text-sm text-muted-foreground tabular-nums">
+                      Entran al Almacén: <strong className="text-foreground">{units} unidades</strong>
+                    </p>
+                  )
+                ) : (
+                <>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
                   <label className="flex cursor-pointer items-center gap-2">
                     <input
@@ -517,7 +611,7 @@ export function ReceiptForm({
                   </label>
                   {!line.complete && (
                     <span className="flex items-center gap-2">
-                      <Label htmlFor={`received-${line.key}`}>Llegaron</Label>
+                      <Label htmlFor={`received-${line.key}`} required>Llegaron</Label>
                       <Input
                         id={`received-${line.key}`}
                         type="number"
@@ -563,11 +657,36 @@ export function ReceiptForm({
                   {units > 0 && (
                     <span className="text-muted-foreground tabular-nums">
                       Factura: <strong className="text-foreground">{units} unidades</strong>
+                      {discount > 0 && paid > 0 && (
+                        <>
+                          {" · "}
+                          <strong className="text-emerald-700 dark:text-emerald-400">
+                            Pagas {formatSoles(paid)} (−{discount}%)
+                          </strong>
+                        </>
+                      )}
                       {perUnit !== null && ` · ${formatSoles(perUnit)} c/u`}
                       {line.isBonus && " · costo S/ 0"}
                     </span>
                   )}
                 </div>
+                {margin && product?.priceSale !== undefined && (
+                  <p
+                    className={cn(
+                      "text-right text-xs tabular-nums",
+                      margin.profit > 0 ? "text-muted-foreground" : "text-destructive",
+                    )}
+                  >
+                    Vendes a {formatSoles(product.priceSale)}
+                    {margin.profit > 0
+                      ? ` · ganas ${formatSoles(margin.profit)} por unidad (${margin.markupPercent}%)`
+                      : margin.profit < 0
+                        ? ` · pierdes ${formatSoles(-margin.profit)} por unidad`
+                        : " · no le ganas nada"}
+                  </p>
+                )}
+                </>
+                )}
               </CardContent>
             </Card>
           );
@@ -583,16 +702,12 @@ export function ReceiptForm({
         </Button>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="receipt-note">Nota</Label>
-        <Input
-          id="receipt-note"
-          placeholder="Opcional. Ej. Llegó con una caja golpeada"
-          maxLength={200}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-      </div>
+      <PaperNote
+        id="receipt-note"
+        placeholder="Ej. Llegó con una caja golpeada"
+        value={note}
+        onChange={setNote}
+      />
 
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -600,15 +715,27 @@ export function ReceiptForm({
         </p>
       )}
 
-      <div className="flex items-center justify-end gap-4 border-t pt-4">
-        <span className="text-sm text-muted-foreground">
-          Total pagado:{" "}
-          <strong className="text-lg text-foreground tabular-nums">
-            {formatSoles(total)}
-          </strong>
-        </span>
-        <Button type="submit" size="lg" disabled={isPending || products.length === 0}>
-          {isPending ? "Guardando..." : "Guardar ingreso"}
+      <div className="flex flex-wrap items-center justify-end gap-4 border-t pt-4">
+        <DraftControls
+          onClear={handleClear}
+          clearDisabled={isPending}
+          draftStatus={draft.status}
+          className="mr-auto"
+        />
+        {!reception && (
+          <span className="text-sm text-muted-foreground">
+            Total pagado:{" "}
+            <strong className="text-lg text-foreground tabular-nums">
+              {formatSoles(total)}
+            </strong>
+          </span>
+        )}
+        <Button
+          type="submit"
+          size="lg"
+          disabled={isPending || uploadingPhoto || products.length === 0}
+        >
+          {isPending ? "Guardando..." : reception ? "Guardar recepción" : "Guardar ingreso"}
         </Button>
       </div>
     </form>

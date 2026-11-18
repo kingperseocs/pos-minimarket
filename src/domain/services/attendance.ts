@@ -1,10 +1,11 @@
 import {
+  DEFAULT_EARLY_MIN,
   OFF_SCHEDULE_MARGIN_MIN,
   SUSPICIOUS_CLOCK_MS,
   type AttendanceStatus,
   type WorkSchedule,
 } from "../entities/attendance";
-import { STORE_UTC_OFFSET, storeDateKey } from "../value-objects/store-time";
+import { STORE_TIME_ZONE, STORE_UTC_OFFSET, storeDateKey } from "../value-objects/store-time";
 
 // Attendance rules: schedules, lateness, absences and how much to trust the
 // time a device says a mark was made. Pure, so the till (offline) and the
@@ -72,6 +73,20 @@ export interface ScheduledShift {
   start: Date;
   end: Date;
   toleranceMin: number;
+  earlyMin: number;
+}
+
+type ScheduleDay = Pick<WorkSchedule, "weekday" | "startTime" | "endTime" | "toleranceMin"> &
+  Partial<Pick<WorkSchedule, "earlyMin">>;
+
+// "HH:MM" of the instant in the store's zone.
+function storeTimeOfDay(date: Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: STORE_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
 }
 
 function atStoreTime(dateKey: string, hhmm: string) {
@@ -81,7 +96,7 @@ function atStoreTime(dateKey: string, hhmm: string) {
 // The person's shift on that date, or null if it's their day off.
 export function scheduleFor(
   dateKey: string,
-  schedules: Pick<WorkSchedule, "weekday" | "startTime" | "endTime" | "toleranceMin">[],
+  schedules: ScheduleDay[],
 ): ScheduledShift | null {
   const day = schedules.find((s) => s.weekday === weekdayOf(dateKey));
   if (!day) return null;
@@ -89,7 +104,45 @@ export function scheduleFor(
   let end = atStoreTime(dateKey, day.endTime);
   // Night shift: ends the next day.
   if (end <= start) end = atStoreTime(addDays(dateKey, 1), day.endTime);
-  return { start, end, toleranceMin: day.toleranceMin };
+  return {
+    start,
+    end,
+    toleranceMin: day.toleranceMin,
+    earlyMin: day.earlyMin ?? DEFAULT_EARLY_MIN,
+  };
+}
+
+export type ClockInWindow =
+  | { allowed: true; shift: ScheduledShift }
+  // No schedule today: only the admin can register that workday.
+  | { allowed: false; reason: "day_off"; shift: null; opensAt: null }
+  // Before the window opens (start − earlyMin).
+  | { allowed: false; reason: "too_early"; shift: ScheduledShift; opensAt: Date };
+
+// Business rule: "Marcar entrada" is enabled from earlyMin minutes before the
+// start (the admin sets it per day) and stays enabled after it (late arrivals
+// are allowed and counted as late). A shift starting just after midnight can
+// be marked from the evening before, so tomorrow's shift is considered too.
+export function clockInWindow(
+  now: Date,
+  schedules: ScheduleDay[],
+): ClockInWindow {
+  const today = storeDateKey(now);
+  const shift = scheduleFor(today, schedules);
+  const tomorrow = scheduleFor(addDays(today, 1), schedules);
+  const opens = (s: ScheduledShift) => new Date(s.start.getTime() - s.earlyMin * MINUTE);
+
+  if (tomorrow && now >= opens(tomorrow)) return { allowed: true, shift: tomorrow };
+  if (!shift) return { allowed: false, reason: "day_off", shift: null, opensAt: null };
+  if (now >= opens(shift)) return { allowed: true, shift };
+  return { allowed: false, reason: "too_early", shift, opensAt: opens(shift) };
+}
+
+export function clockInBlockedMessage(window: Exclude<ClockInWindow, { allowed: true }>) {
+  if (window.reason === "day_off") {
+    return "Hoy no tienes horario. Pide al administrador que registre tu asistencia.";
+  }
+  return `Aún no puedes marcar tu entrada. Se habilita a las ${storeTimeOfDay(window.opensAt)}.`;
 }
 
 // Minutes late counted from the start, but only once past the tolerance
@@ -105,8 +158,14 @@ export function computeEarlyLeave(clockOut: Date, shift: ScheduledShift | null) 
   return Math.max(0, Math.floor((shift.end.getTime() - clockOut.getTime()) / MINUTE));
 }
 
-export function workedMinutes(clockIn: Date, clockOut: Date) {
-  return Math.max(0, Math.floor((clockOut.getTime() - clockIn.getTime()) / MINUTE));
+// Counted from the scheduled start when the person marked earlier (marking
+// at 06:56 for a 07:00 shift doesn't add 4 minutes worked).
+export function workedMinutes(clockIn: Date, clockOut: Date, scheduledStart?: Date | null) {
+  const from =
+    scheduledStart && scheduledStart > clockIn && scheduledStart < clockOut
+      ? scheduledStart
+      : clockIn;
+  return Math.max(0, Math.floor((clockOut.getTime() - from.getTime()) / MINUTE));
 }
 
 // Opening the till well before the start or after the end of the shift (or
@@ -185,6 +244,8 @@ export interface DayRecordInput {
   workDate: string;
   clockInAt: Date;
   clockOutAt: Date | null;
+  // The shift's start when it was marked (hours count from it).
+  scheduledStart?: Date | null;
   lateMinutes: number;
   earlyLeaveMinutes: number;
   status: AttendanceStatus;
@@ -231,7 +292,7 @@ export function buildPersonDay<R extends DayRecordInput>(
     dateKey,
     shift,
     records: sorted,
-    workedMinutes: closed.reduce((sum, r) => sum + workedMinutes(r.clockInAt, r.clockOutAt!), 0),
+    workedMinutes: closed.reduce((sum, r) => sum + workedMinutes(r.clockInAt, r.clockOutAt!, r.scheduledStart), 0),
     lateMinutes: sorted[0]?.lateMinutes ?? 0,
     earlyLeaveMinutes: closed.at(-1)?.earlyLeaveMinutes ?? 0,
     corrected: sorted.some((r) => r.isCorrected),

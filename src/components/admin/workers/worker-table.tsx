@@ -1,11 +1,11 @@
 "use client";
 
 import {
+  BanIcon,
   CakeIcon,
   CloudOffIcon,
-  KeyRoundIcon,
   RefreshCwIcon,
-  UserPlusIcon,
+  RotateCcwIcon,
 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -24,10 +24,14 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  type AlertDialogHandle,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  createAlertDialogHandle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -54,6 +58,7 @@ import { usePagination } from "@/hooks/use-pagination";
 import { formatSoles } from "@/lib/money";
 import { DataTable, ID_COLUMN, IdCell } from "../data-table";
 import { DataTablePagination } from "../data-table-pagination";
+import { RowActions } from "../row-actions";
 import { WorkerStatusBadge } from "./worker-status-badge";
 
 export type WorkerRow = {
@@ -185,16 +190,6 @@ export function WorkerTable({
             <TableCell>
               <div className="flex flex-col items-start gap-1">
                 <WorkerStatusBadge status={worker.status} />
-                {worker.pendingReason && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    {worker.pendingReason === "pin_reset" ? (
-                      <KeyRoundIcon className="size-3" />
-                    ) : (
-                      <UserPlusIcon className="size-3" />
-                    )}
-                    {worker.pendingReason === "pin_reset" ? "Cambió su clave" : "Nuevo registro"}
-                  </span>
-                )}
               </div>
             </TableCell>
             <TableCell className="text-sm">
@@ -205,56 +200,12 @@ export function WorkerTable({
             </TableCell>
             <TableCell className="text-right tabular-nums">{worker.pointsBalance}</TableCell>
             <TableCell className="text-right">
-              <div className="flex flex-wrap justify-end gap-1.5">
-                {worker.nameSource === "manual" && worker.status === "pending" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={isPending}
-                    onClick={() => checkReniec(worker)}
-                  >
-                    <RefreshCwIcon />
-                    Consultar RENIEC
-                  </Button>
-                )}
-                {worker.status === "pending" && (
-                  <>
-                    <ConfirmButton
-                      label="Rechazar"
-                      title={`¿Rechazar a ${worker.fullName}?`}
-                      description="No recibirá descuento. Usa esta opción si no es trabajador del aeropuerto o si sus datos no son correctos."
-                      confirmLabel="Rechazar"
-                      destructive
-                      disabled={isPending}
-                      onConfirm={() => run(worker, "reject")}
-                    />
-                    <Button size="sm" disabled={isPending} onClick={() => run(worker, "approve")}>
-                      {worker.pendingReason === "pin_reset" ? "Aprobar cambio" : "Aprobar"}
-                    </Button>
-                  </>
-                )}
-                {worker.status === "active" && (
-                  <ConfirmButton
-                    label="Suspender"
-                    title={`¿Suspender el descuento de ${worker.fullName}?`}
-                    description="Dejará de recibir descuento hasta que lo reactives. Útil si dejó de trabajar en el aeropuerto o se sospecha mal uso."
-                    confirmLabel="Suspender"
-                    destructive
-                    disabled={isPending}
-                    onConfirm={() => run(worker, "suspend")}
-                  />
-                )}
-                {worker.status === "suspended" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={isPending}
-                    onClick={() => run(worker, "reactivate")}
-                  >
-                    Reactivar
-                  </Button>
-                )}
-              </div>
+              <WorkerActions
+                worker={worker}
+                disabled={isPending}
+                onRun={(action) => run(worker, action)}
+                onCheckReniec={() => checkReniec(worker)}
+              />
             </TableCell>
           </TableRow>
         ))}
@@ -366,41 +317,75 @@ export function WorkerTable({
   );
 }
 
-function ConfirmButton({
-  label,
+// The row's "⋮" menu (suspending asks first). Registrations are active at
+// once, so there is nothing to approve.
+function WorkerActions({
+  worker,
+  disabled,
+  onRun,
+  onCheckReniec,
+}: {
+  worker: WorkerRow;
+  disabled: boolean;
+  onRun: (action: WorkerAction) => void;
+  onCheckReniec: () => void;
+}) {
+  const [suspendDialog] = useState(createAlertDialogHandle);
+  // A name typed by hand can be checked against RENIEC at any time.
+  const canCheckReniec = worker.nameSource === "manual";
+
+  if (worker.status !== "active" && worker.status !== "suspended") {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <>
+      <RowActions label={worker.fullName} disabled={disabled}>
+        {canCheckReniec && (
+          <DropdownMenuItem onClick={onCheckReniec}>
+            <RefreshCwIcon />
+            Consultar RENIEC
+          </DropdownMenuItem>
+        )}
+        {worker.status === "active" && (
+          <DropdownMenuItem variant="destructive" onClick={() => suspendDialog.open(null)}>
+            <BanIcon />
+            Suspender
+          </DropdownMenuItem>
+        )}
+        {worker.status === "suspended" && (
+          <DropdownMenuItem onClick={() => onRun("reactivate")}>
+            <RotateCcwIcon />
+            Reactivar
+          </DropdownMenuItem>
+        )}
+      </RowActions>
+      <ConfirmDialog
+        handle={suspendDialog}
+        title={`¿Suspender el descuento de ${worker.fullName}?`}
+        description="Dejará de recibir descuento hasta que lo reactives. Útil si dejó de trabajar en el aeropuerto o se sospecha mal uso."
+        confirmLabel="Suspender"
+        onConfirm={() => onRun("suspend")}
+      />
+    </>
+  );
+}
+
+function ConfirmDialog({
+  handle,
   title,
   description,
   confirmLabel,
-  destructive,
-  disabled,
   onConfirm,
 }: {
-  label: string;
+  handle: AlertDialogHandle;
   title: string;
   description: string;
   confirmLabel: string;
-  destructive?: boolean;
-  disabled?: boolean;
   onConfirm: () => void;
 }) {
   return (
-    <AlertDialog>
-      <AlertDialogTrigger
-        render={
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={disabled}
-            className={
-              destructive
-                ? "text-destructive hover:bg-destructive/10 hover:text-destructive"
-                : undefined
-            }
-          >
-            {label}
-          </Button>
-        }
-      />
+    <AlertDialog handle={handle}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
@@ -409,7 +394,7 @@ function ConfirmButton({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancelar</AlertDialogCancel>
           <AlertDialogAction
-            className={destructive ? "bg-destructive text-white hover:bg-destructive/90" : undefined}
+            className="bg-destructive text-white hover:bg-destructive/90"
             onClick={onConfirm}
           >
             {confirmLabel}

@@ -50,7 +50,13 @@ export interface SaleInput {
   workerId?: number;
   workerVerification?: WorkerVerification;
   discountTotal?: number;
+  // Rounding to whole soles the POS applied (see saleRounding).
+  roundingAmount?: number;
   policyId?: number;
+  // Percentage discount applied to the whole sale (see PromoDiscount).
+  promoDiscountId?: number;
+  // Worker points spent as soles off this sale (see redeemSoles).
+  pointsRedeemed?: number;
 }
 
 // What is actually persisted, after the server re-priced and audited the
@@ -66,12 +72,21 @@ export interface SaleRecord {
   subtotal: number;
   discountTotal: number;
   giftTotal: number;
+  // subtotal − discountTotal − giftTotal + rounding − redeemTotal = total.
+  rounding: number;
   total: number;
   workerId: number | null;
   policyId: number | null;
   workerVerification: WorkerVerification;
   pointsEarned: number;
+  // Worker points spent on this sale and the soles they took off total
+  // (subtotal − discountTotal − giftTotal + rounding − redeemTotal = total).
+  pointsRedeemed: number;
+  redeemTotal: number;
   auditFlags: AuditFlag[];
+  // Percentage discount applied, with its percent at the time (0 = none).
+  promoDiscountId: number | null;
+  promoDiscountPercent: number;
 }
 
 export interface SaleItem extends SaleItemInput {
@@ -92,13 +107,20 @@ export interface Sale {
   // Only on older sales, whose free lines were courtesies an admin approved
   // (null: the free line is a birthday gift).
   courtesyApprovedByName: string | null;
+  // To whole soles on discounted sales (−0.32); 0 otherwise.
+  rounding: number;
   total: number;
   workerId: number | null;
   workerName: string | null;
   workerDni: string | null;
   workerVerification: WorkerVerification;
   pointsEarned: number;
+  pointsRedeemed: number;
+  redeemTotal: number;
   auditFlags: AuditFlag[];
+  promoDiscountId: number | null;
+  promoDiscountName: string | null;
+  promoDiscountPercent: number;
   clientCreatedAt: Date;
   syncedAt: Date | null;
   createdAt: Date;

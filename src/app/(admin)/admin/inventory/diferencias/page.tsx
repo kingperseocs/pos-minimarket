@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/layout/page-skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { DISCREPANCY_STATUS_LABELS } from "@/domain/entities/receiving";
 import { round2 } from "@/domain/value-objects/money";
@@ -131,7 +131,7 @@ async function DiscrepanciesContent() {
 
 export default function DiscrepanciesPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+    <Suspense fallback={<PageSkeleton />}>
       <DiscrepanciesContent />
     </Suspense>
   );

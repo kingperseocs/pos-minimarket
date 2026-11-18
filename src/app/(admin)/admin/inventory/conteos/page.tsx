@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/layout/page-skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { COUNT_ITEM_STATUS_LABELS } from "@/domain/entities/daily-count";
 import { STORE_TIME_ZONE } from "@/domain/value-objects/store-time";
@@ -134,7 +134,7 @@ async function CountsContent() {
 
 export default function CountsPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+    <Suspense fallback={<PageSkeleton />}>
       <CountsContent />
     </Suspense>
   );

@@ -7,7 +7,8 @@ import { workerRegisterSchema } from "@/application/validation/worker";
 import { withTimeout } from "./lookup-dni";
 
 // Registered by a cashier at the till (online or queued offline). The worker
-// always starts "pending": no discount until an admin approves them.
+// is active right away (no admin approval): the discount applies from their
+// first purchase. The admin can suspend it if it is misused.
 export async function registerWorkerUseCase(
   deps: {
     workers: WorkerRepository;

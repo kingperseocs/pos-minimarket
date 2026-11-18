@@ -12,7 +12,7 @@ import {
   TodayView,
 } from "@/components/admin/attendance/attendance-views";
 import { PageHeader } from "@/components/admin/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
+import { TableSkeleton } from "@/components/layout/page-skeleton";
 import { storeDateKey } from "@/domain/value-objects/store-time";
 import { attendanceRepository } from "@/infrastructure/repositories";
 import { parseDateRange } from "@/lib/date-range";
@@ -52,7 +52,7 @@ export default async function AttendancePage({ searchParams }: PageProps<"/admin
       <AttendanceNav current={view} pendingCorrections={pending} />
       <Suspense
         key={`${view}-${date}-${month}-${range.from}-${range.to}-${params.persona ?? ""}`}
-        fallback={<Skeleton className="h-96 rounded-xl" />}
+        fallback={<TableSkeleton />}
       >
         {view === "hoy" && <TodayView today={today} pending={pending} />}
         {view === "dia" && <DayView date={date} today={today} />}

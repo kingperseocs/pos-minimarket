@@ -1,37 +1,52 @@
+import { listActiveCategoriesUseCase } from "@/application/use-cases/categories/list-categories";
 import { getInventoryUseCase } from "@/application/use-cases/inventory/get-inventory";
 import { listAllProductsUseCase } from "@/application/use-cases/products/list-products";
 import { listPresentationsUseCase } from "@/application/use-cases/products/save-presentation";
-import { listPurchaseOrdersUseCase } from "@/application/use-cases/purchasing/purchase-orders";
 import { listSuppliersUseCase } from "@/application/use-cases/suppliers/save-supplier";
-import { remainingUnits } from "@/domain/services/purchase-orders";
 import {
+  categoryRepository,
   inventoryRepository,
   presentationRepository,
   productRepository,
-  purchaseOrderRepository,
+  receivingRepository,
   supplierRepository,
 } from "@/infrastructure/repositories";
 import type {
-  ReceiptOrderOption,
   ReceiptPresentationOption,
   ReceiptProductOption,
   ReceiptSupplierOption,
 } from "./receipt-form";
 import type { TransferProductOption } from "./transfer-form";
 
-// Shared by the admin and the warehouse screens.
 
-export async function loadReceiptFormData(): Promise<{
+// The Almacén's reception screen: the shared data without prices, plus what
+// was already bought from each supplier.
+export async function loadReceptionData() {
+  const [data, supplierProductIds, categories] = await Promise.all([
+    loadReceiptFormData({ withPrices: false }),
+    receivingRepository.productIdsBySupplier(),
+    listActiveCategoriesUseCase(categoryRepository),
+  ]);
+  return {
+    ...data,
+    supplierProductIds,
+    categories: categories.map((c) => ({ id: c.id, parentId: c.parentId })),
+  };
+}
+
+// Shared by the admin and the warehouse screens. The Almacén only counts
+// what arrives: it gets no prices.
+export async function loadReceiptFormData(
+  { withPrices = true }: { withPrices?: boolean } = {},
+): Promise<{
   products: ReceiptProductOption[];
   presentations: ReceiptPresentationOption[];
   suppliers: ReceiptSupplierOption[];
-  orders: ReceiptOrderOption[];
 }> {
-  const [products, presentations, suppliers, orders] = await Promise.all([
+  const [products, presentations, suppliers] = await Promise.all([
     listAllProductsUseCase(productRepository),
     listPresentationsUseCase(presentationRepository),
     listSuppliersUseCase(supplierRepository),
-    listPurchaseOrdersUseCase(purchaseOrderRepository),
   ]);
   return {
     products: products
@@ -42,6 +57,8 @@ export async function loadReceiptFormData(): Promise<{
         categoryId: p.categoryId,
         tracksExpiry: p.tracksExpiry,
         barcode: p.barcode,
+        imageUrl: p.imageUrl,
+        ...(withPrices ? { priceSale: p.priceSale } : {}),
       })),
     presentations: presentations
       .filter((p) => p.isActive)
@@ -51,6 +68,7 @@ export async function loadReceiptFormData(): Promise<{
         name: p.name,
         unitsTotal: p.unitsTotal,
         barcode: p.barcode,
+        supplierCode: p.supplierCode,
       })),
     suppliers: suppliers
       .filter((s) => s.isActive)
@@ -59,50 +77,7 @@ export async function loadReceiptFormData(): Promise<{
         name: s.tradeName ?? s.businessName,
         categoryIds: s.categories.map((c) => c.id),
       })),
-    orders: orders
-      .filter((o) => o.status === "pending" || o.status === "partial")
-      .map((o) => ({
-        id: o.id,
-        supplierId: o.supplierId,
-        label:
-          `Orden #${o.id} · ${o.supplierName}` +
-          (o.status === "partial" ? " (llegó una parte)" : ""),
-        lines: openOrderLines(o.lines),
-      })),
   };
-}
-
-// What is still missing, in the order's presentation when it divides evenly
-// (2 Cajas), otherwise in units.
-function openOrderLines(
-  lines: {
-    productId: number;
-    presentationId: number | null;
-    quantity: number;
-    units: number;
-    estimatedTotal: number | null;
-    receivedUnits: number;
-  }[],
-): ReceiptOrderOption["lines"] {
-  const remaining = remainingUnits(
-    new Map(lines.map((l) => [l.productId, l.units])),
-    new Map(lines.map((l) => [l.productId, l.receivedUnits])),
-  );
-  return lines.flatMap((line) => {
-    const left = remaining.get(line.productId);
-    if (!left) return [];
-    const unitsPer = line.units / line.quantity;
-    const whole = line.presentationId !== null && left % unitsPer === 0;
-    return [
-      {
-        productId: line.productId,
-        presentationId: whole ? line.presentationId : null,
-        quantity: whole ? left / unitsPer : left,
-        // The quoted cost only applies when the whole line is still due.
-        estimatedTotal: left === line.units ? line.estimatedTotal : null,
-      },
-    ];
-  });
 }
 
 // Only what is physically in the Almacén can be moved.
@@ -115,12 +90,14 @@ export async function loadTransferFormData(): Promise<TransferProductOption[]> {
   const unitCodes = new Map(products.map((p) => [p.id, p.barcode]));
   const warehouseId = locations.find((l) => l.kind === "warehouse")?.id;
   if (warehouseId === undefined) return [];
+  const storeId = locations.find((l) => l.kind === "store")?.id;
   return stock
     .filter((s) => s.isActive && (s.byLocation[warehouseId] ?? 0) > 0)
     .map((s) => ({
       id: s.productId,
       name: s.productName,
       available: s.byLocation[warehouseId],
+      inStore: storeId === undefined ? 0 : (s.byLocation[storeId] ?? 0),
       barcode: unitCodes.get(s.productId) ?? null,
       presentations: presentations
         .filter((p) => p.productId === s.productId && p.isActive)

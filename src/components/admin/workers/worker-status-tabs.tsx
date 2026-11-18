@@ -3,7 +3,6 @@ import type { WorkerStatus } from "@/domain/entities/worker";
 import { cn } from "@/lib/utils";
 
 const TABS: { status: WorkerStatus; label: string }[] = [
-  { status: "pending", label: "Por aprobar" },
   { status: "active", label: "Activos" },
   { status: "suspended", label: "Suspendidos" },
   { status: "rejected", label: "Rechazados" },
@@ -41,9 +40,7 @@ export function WorkerStatusTabs({
             <span
               className={cn(
                 "rounded-full px-1.5 text-xs tabular-nums",
-                tab.status === "pending" && count > 0
-                  ? "bg-amber-500 text-white"
-                  : "bg-muted text-muted-foreground",
+                "bg-muted text-muted-foreground",
               )}
             >
               {count}

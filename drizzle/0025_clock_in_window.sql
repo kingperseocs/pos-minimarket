@@ -1,0 +1,1 @@
+ALTER TABLE "work_schedules" ADD COLUMN "early_min" integer DEFAULT 5 NOT NULL;

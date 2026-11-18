@@ -54,17 +54,26 @@ export const workerStatementSchema = z.object({
 });
 
 export const discountPolicySchema = z.object({
-  maxDiscountedUnitsPerSale: z
+  // The worker's first N units of the day, across all their purchases.
+  maxDiscountedUnitsPerDay: z
     .number()
     .int("Debe ser un número entero")
     .min(1, "Al menos 1 unidad")
-    .max(20),
-  maxDiscountedSalesPerDay: z
+    .max(50),
+  pointsPerSol: z.number().min(0).max(100),
+  // Points worth S/ 1 off (0 = the worker can't redeem).
+  redeemPointsPerSol: z
     .number()
     .int("Debe ser un número entero")
     .min(0)
-    .max(50),
-  pointsPerSol: z.number().min(0).max(100),
+    .max(100_000)
+    .default(0),
+  minRedeemPoints: z
+    .number()
+    .int("Debe ser un número entero")
+    .min(0)
+    .max(1_000_000)
+    .default(0),
   birthdayGiftMaxAmount: z.number().min(0).max(500),
 });
 

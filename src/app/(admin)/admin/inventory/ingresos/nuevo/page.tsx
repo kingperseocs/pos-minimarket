@@ -6,9 +6,9 @@ import { ReceiptForm } from "@/components/admin/inventory/receipt-form";
 import { PageHeader } from "@/components/admin/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/layout/page-skeleton";
 
-async function NewReceiptContent({ orderParam }: { orderParam: unknown }) {
+async function NewReceiptContent() {
   const data = await loadReceiptFormData();
 
   return (
@@ -41,7 +41,6 @@ async function NewReceiptContent({ orderParam }: { orderParam: unknown }) {
       ) : (
         <ReceiptForm
           {...data}
-          initialOrderId={Number(orderParam) || undefined}
           doneHref="/admin/inventory/ingresos"
         />
       )}
@@ -49,14 +48,10 @@ async function NewReceiptContent({ orderParam }: { orderParam: unknown }) {
   );
 }
 
-export default async function NewReceiptPage({
-  searchParams,
-}: PageProps<"/admin/inventory/ingresos/nuevo">) {
-  // ?orden=3 when coming from a purchase order.
-  const { orden } = await searchParams;
+export default function NewReceiptPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
-      <NewReceiptContent orderParam={orden} />
+    <Suspense fallback={<PageSkeleton />}>
+      <NewReceiptContent />
     </Suspense>
   );
 }

@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  type DialogHandle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,13 +29,24 @@ import {
 } from "@/components/ui/select";
 import type { Presentation } from "@/domain/entities/presentation";
 import { cn } from "@/lib/utils";
+import { PRESENTATION_NAME_SUGGESTIONS } from "@/domain/services/presentations";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import { DeactivateButton } from "./deactivate-button";
+import { DraftControls, toastCleared } from "./form-dialog";
 
 // Select value for "contains units directly" (presentation ids are numbers).
 const UNIT = "unit";
 
-type Draft = { name: string; qty: string; parent: string; barcode: string };
-const EMPTY: Draft = { name: "", qty: "", parent: UNIT, barcode: "" };
+type Draft = {
+  name: string;
+  qty: string;
+  parent: string;
+  barcode: string;
+  supplierCode: string;
+};
+const EMPTY: Draft = { name: "", qty: "", parent: UNIT, barcode: "", supplierCode: "" };
+type FormState = { editingId: number | null; draft: Draft };
+const BLANK: FormState = { editingId: null, draft: EMPTY };
 
 // "Caja = 6 Display = 144 und" for one product. The till always sells the
 // unit; presentations are how it is bought and moved between locations.
@@ -42,10 +54,13 @@ export function PresentationsDialog({
   productId,
   productName,
   presentations,
+  handle,
 }: {
   productId: number;
   productName: string;
   presentations: Presentation[];
+  // Opened through it (a row's "⋮" menu) instead of its own button.
+  handle?: DialogHandle;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -69,6 +84,7 @@ export function PresentationsDialog({
       qty: String(p.qtyOfParent),
       parent: p.parentId === null ? UNIT : String(p.parentId),
       barcode: p.barcode ?? "",
+      supplierCode: p.supplierCode ?? "",
     });
     setError(null);
   }
@@ -77,6 +93,32 @@ export function PresentationsDialog({
     setEditingId(null);
     setDraft(EMPTY);
     setError(null);
+  }
+
+  // The half-typed presentation survives closing the dialog by accident.
+  const formDraft = useFormDraft<FormState>({
+    key: `presentation:${productId}`,
+    values: { editingId, draft },
+    baseline: BLANK,
+    enabled: open,
+  });
+
+  function applyForm(next: FormState) {
+    // The presentation being edited may have been removed meanwhile.
+    const editing =
+      next.editingId !== null && presentations.some((p) => p.id === next.editingId)
+        ? next.editingId
+        : null;
+    setEditingId(editing);
+    setDraft({ ...EMPTY, ...next.draft });
+    setError(null);
+  }
+
+  function handleClear() {
+    const before = { editingId, draft };
+    resetForm();
+    formDraft.clear();
+    toastCleared(() => applyForm(before));
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -89,6 +131,7 @@ export function PresentationsDialog({
         qtyOfParent: draft.qty,
         parentId: draft.parent === UNIT ? null : Number(draft.parent),
         barcode: draft.barcode,
+        supplierCode: draft.supplierCode,
       };
       const result =
         editingId === null
@@ -116,18 +159,21 @@ export function PresentationsDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (next) applyForm(formDraft.restore() ?? BLANK);
         setOpen(next);
-        resetForm();
       }}
+      handle={handle}
     >
-      <DialogTrigger
-        render={
-          <Button size="sm" variant="outline">
-            <BoxesIcon data-icon="inline-start" />
-            Presentaciones
-          </Button>
-        }
-      />
+      {!handle && (
+        <DialogTrigger
+          render={
+            <Button size="sm" variant="outline">
+              <BoxesIcon data-icon="inline-start" />
+              Presentaciones
+            </Button>
+          }
+        />
+      )}
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Presentaciones · {productName}</DialogTitle>
@@ -156,9 +202,11 @@ export function PresentationsDialog({
                   = {p.qtyOfParent} {p.parentName ?? "Unidad"}
                   {!p.isActive && " · inactiva"}
                 </span>
-                {p.barcode && (
+                {(p.barcode || p.supplierCode) && (
                   <div className="font-mono text-xs text-muted-foreground">
-                    {p.barcode}
+                    {[p.barcode, p.supplierCode && `Cód. prov. ${p.supplierCode}`]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </div>
                 )}
               </div>
@@ -205,18 +253,24 @@ export function PresentationsDialog({
             {editingId === null ? "Nueva presentación" : "Editar presentación"}
           </p>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="presentation-name">Nombre</Label>
+            <Label htmlFor="presentation-name" required>Nombre</Label>
             <Input
               id="presentation-name"
-              placeholder="Ej. Display, Caja, Pack x6"
+              placeholder="Ej. Display, Caja, Cajón"
+              list="presentation-name-suggestions"
               maxLength={40}
               value={draft.name}
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
               required
             />
+            <datalist id="presentation-name-suggestions">
+              {PRESENTATION_NAME_SUGGESTIONS.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="presentation-qty">Contiene</Label>
+            <Label htmlFor="presentation-qty" required>Contiene</Label>
             <div className="flex items-center gap-2">
               <Input
                 id="presentation-qty"
@@ -277,12 +331,31 @@ export function PresentationsDialog({
               className="font-mono"
             />
           </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="presentation-supplier-code" optional>
+              Código del proveedor
+            </Label>
+            <Input
+              id="presentation-supplier-code"
+              placeholder="Ej. 800436 (columna CÓDIGO del catálogo)"
+              maxLength={30}
+              value={draft.supplierCode}
+              onChange={(e) => setDraft({ ...draft, supplierCode: e.target.value })}
+              className="font-mono"
+            />
+          </div>
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}
             </p>
           )}
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <DraftControls
+              onClear={handleClear}
+              clearDisabled={isPending}
+              draftStatus={formDraft.status}
+              className="mr-auto"
+            />
             {editingId !== null && (
               <Button type="button" variant="ghost" onClick={resetForm}>
                 Cancelar

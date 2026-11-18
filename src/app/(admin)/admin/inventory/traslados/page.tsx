@@ -6,7 +6,7 @@ import { DataTable, ID_COLUMN, IdCell } from "@/components/admin/data-table";
 import { PageHeader } from "@/components/admin/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/layout/page-skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { STORE_TIME_ZONE } from "@/domain/value-objects/store-time";
 import { receivingRepository } from "@/infrastructure/repositories";
@@ -90,7 +90,7 @@ async function TransfersContent() {
 
 export default function TransfersPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+    <Suspense fallback={<PageSkeleton />}>
       <TransfersContent />
     </Suspense>
   );
