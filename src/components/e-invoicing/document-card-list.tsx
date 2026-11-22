@@ -114,7 +114,9 @@ export function DocumentCardList({
                   <p className="font-semibold">
                     {FULL_TYPE_LABELS[d.docType]} » {d.number ?? "por emitir"}
                     {CARD_TONE_LABELS[d.tone] && (
-                      <span className="ml-2 text-xs font-semibold uppercase">· {CARD_TONE_LABELS[d.tone]}</span>
+                      <span className="ml-2 inline-block rounded-full bg-white/70 px-2 py-0.5 align-middle text-[11px] font-bold tracking-wide uppercase ring-1 ring-current/20 dark:bg-black/30">
+                        {CARD_TONE_LABELS[d.tone]}
+                      </span>
                     )}
                   </p>
                   <p

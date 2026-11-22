@@ -1,4 +1,4 @@
-import { ChartColumnIcon } from "lucide-react";
+import { BanIcon, ChartColumnIcon, CircleCheckBigIcon, SendIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { listSaleDocumentsUseCase } from "@/application/use-cases/e-invoicing/list-sale-documents";
@@ -7,7 +7,6 @@ import { toCardRow } from "@/components/e-invoicing/card-row";
 import { DocumentCardList } from "@/components/e-invoicing/document-card-list";
 import { TableSkeleton } from "@/components/layout/page-skeleton";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   SALE_DOCUMENT_STATUS_LABELS,
   type SaleDocumentStatus,
@@ -41,23 +40,55 @@ async function DocumentsReport({ filters, live }: { filters: DocumentFilterValue
   const review = all.filter((d) => d.raw.status === "review").length;
   const pending = all.filter((d) => d.raw.status === "queued" || d.raw.status === "failed").length;
   const cards = [
-    { title: "Emitidos", value: String(valid.length), note: formatSoles(valid.reduce((s, d) => s + d.row.total, 0)) },
-    { title: "Anulados", value: String(cancelled.length), note: formatSoles(cancelled.reduce((s, d) => s + d.row.total, 0)) },
-    { title: "En revisión", value: String(review), note: "Esperan corrección o al contador" },
-    { title: "Por emitir o con error", value: String(pending), note: "Se reintentan solos" },
+    {
+      title: "Emitidos",
+      value: valid.length,
+      note: formatSoles(valid.reduce((s, d) => s + d.row.total, 0)),
+      icon: CircleCheckBigIcon,
+      tone: "bg-emerald-50 ring-emerald-200 text-emerald-900 dark:bg-emerald-950/40 dark:ring-emerald-900 dark:text-emerald-100",
+      accent: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300",
+    },
+    {
+      title: "Anulados",
+      value: cancelled.length,
+      note: formatSoles(cancelled.reduce((s, d) => s + d.row.total, 0)),
+      icon: BanIcon,
+      tone: "bg-red-50 ring-red-200 text-red-900 dark:bg-red-950/40 dark:ring-red-900 dark:text-red-100",
+      accent: "bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-300",
+    },
+    {
+      title: "En revisión",
+      value: review,
+      note: "Esperan corrección o al contador",
+      icon: TriangleAlertIcon,
+      tone: "bg-yellow-50 ring-yellow-200 text-yellow-900 dark:bg-yellow-950/40 dark:ring-yellow-900 dark:text-yellow-100",
+      accent: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/60 dark:text-yellow-300",
+    },
+    {
+      title: "Por emitir o con error",
+      value: pending,
+      note: "Se reintentan solos",
+      icon: SendIcon,
+      tone: "bg-sky-50 ring-sky-200 text-sky-900 dark:bg-sky-950/40 dark:ring-sky-900 dark:text-sky-100",
+      accent: "bg-sky-100 text-sky-700 dark:bg-sky-900/60 dark:text-sky-300",
+    },
   ];
 
   return (
     <>
+      {/* Pastel summary cards, the same colours as the document cards. */}
       <div className="grid shrink-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map((card) => (
-          <Card key={card.title} size="sm">
-            <CardHeader>
-              <CardDescription>{card.title}</CardDescription>
-              <CardTitle className="text-2xl tabular-nums">{card.value}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">{card.note}</CardContent>
-          </Card>
+        {cards.map(({ title, value, note, icon: Icon, tone, accent }) => (
+          <div key={title} className={`flex items-center gap-4 rounded-xl p-4 shadow-sm ring-1 ${tone}`}>
+            <span className={`flex size-12 shrink-0 items-center justify-center rounded-full ${accent}`}>
+              <Icon className="size-6" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{title}</p>
+              <p className="text-3xl leading-tight font-bold tabular-nums">{value}</p>
+              <p className="truncate text-sm font-semibold opacity-80">{note}</p>
+            </div>
+          </div>
         ))}
       </div>
       <div className="-mx-2 min-h-0 flex-1 overflow-y-auto rounded-lg bg-muted/40 px-2 py-3 md:-mx-3 md:px-3">
