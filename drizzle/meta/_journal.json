@@ -260,6 +260,13 @@
       "when": 1795013403471,
       "tag": "0036_work_shifts",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795377865400,
+      "tag": "0037_e_invoicing",
+      "breakpoints": true
     }
   ]
 }

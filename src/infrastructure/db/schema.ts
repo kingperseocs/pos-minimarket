@@ -113,6 +113,27 @@ export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
 // How a line's product was identified (barcode reader or by hand); null on
 // lines recorded before the reader existed.
 export const captureSourceEnum = pgEnum("capture_source", ["scan", "manual"]);
+
+// Electronic invoicing (the billing engine "motor" issues to SUNAT).
+export const saleDocumentTypeEnum = pgEnum("sale_document_type", [
+  "boleta",
+  "factura",
+]);
+// POS-side lifecycle of a sale's document (the outbox). The SUNAT verdict is
+// in motor_status: an "issued" document can still be PENDIENTE at SUNAT.
+export const saleDocumentStatusEnum = pgEnum("sale_document_status", [
+  "queued", // waiting to be sent to the motor
+  "review", // not emitted automatically (discounts, gift, points, rounding…)
+  "sending", // locked by a worker right now
+  "issued", // the motor created it (has motor_id and number)
+  "failed", // the motor was unreachable or rejected the request
+  "voided", // annulled (baja / resumen diario)
+]);
+export const saleDocumentNoteKindEnum = pgEnum("sale_document_note_kind", [
+  "credit_note",
+  "debit_note",
+  "void",
+]);
 // Whether the supplier's invoice of a receipt was paid, and how.
 export const receiptPaymentStatusEnum = pgEnum("receipt_payment_status", [
   "pending",
@@ -281,6 +302,10 @@ export const products = pgTable(
     // neither. Informative: the till always sells whole units.
     netContent: numeric("net_content", { precision: 10, scale: 3 }),
     netContentUnit: text("net_content_unit"),
+    // SUNAT catalog 07: 10 gravado, 20 exonerado, 30 inafecto. 10 by default
+    // until the accountant confirms the Amazonía exemption (D-18); the
+    // global override in e_invoicing_settings can force one for all.
+    igvAffectation: text("igv_affectation").notNull().default("10"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -289,7 +314,13 @@ export const products = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("products_category_id_idx").on(table.categoryId)],
+  (table) => [
+    index("products_category_id_idx").on(table.categoryId),
+    check(
+      "products_igv_affectation_valid",
+      sql`${table.igvAffectation} in ('10', '20', '30')`,
+    ),
+  ],
 );
 
 // Bulk packagings of a product (Display = 24 units, Caja = 6 Displays). A
@@ -1283,5 +1314,140 @@ export const saleItemsRelations = relations(saleItems, ({ one }) => ({
   product: one(products, {
     fields: [saleItems.productId],
     references: [products.id],
+  }),
+}));
+
+// The electronic document (boleta / factura) of a sale, and the outbox that
+// gets it issued by the motor. Created in the same transaction as the sale,
+// so no sale is left without one. One per sale.
+export const saleDocuments = pgTable(
+  "sale_documents",
+  {
+    id: integer("id_sale_document").primaryKey().generatedByDefaultAsIdentity(),
+    saleId: integer("id_sale")
+      .notNull()
+      .unique()
+      .references(() => sales.id, { onDelete: "cascade" }),
+    saleUuid: uuid("sale_uuid").notNull().unique(),
+    docType: saleDocumentTypeEnum("doc_type").notNull(),
+    series: text("series").notNull(),
+    // SUNAT catalog 06: 0 none ("clientes varios"), 1 DNI, 6 RUC.
+    customerDocType: text("customer_doc_type").notNull().default("0"),
+    customerDocNumber: text("customer_doc_number"),
+    customerName: text("customer_name"),
+    customerAddress: text("customer_address"),
+    status: saleDocumentStatusEnum("status").notNull().default("queued"),
+    reviewReasons: text("review_reasons")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    // Filled once the motor answers.
+    motorId: uuid("motor_id"),
+    number: text("number"),
+    motorStatus: text("motor_status"),
+    sunatCode: integer("sunat_code"),
+    sunatDescription: text("sunat_description"),
+    // Sent as Idempotency-Key: the sale uuid; uuid:rN after a manual reissue.
+    idempotencyKey: text("idempotency_key").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // A worker holds the row until then (two tills never send it twice).
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("sale_documents_status_next_idx").on(table.status, table.nextAttemptAt),
+    index("sale_documents_created_idx").on(table.createdAt),
+    check(
+      "sale_documents_customer_doc_type_valid",
+      sql`${table.customerDocType} in ('0', '1', '6')`,
+    ),
+  ],
+);
+
+// Credit notes, debit notes and annulments issued on a sale's document.
+export const saleDocumentNotes = pgTable(
+  "sale_document_notes",
+  {
+    id: integer("id_sale_document_note")
+      .primaryKey()
+      .generatedByDefaultAsIdentity(),
+    saleDocumentId: integer("id_sale_document")
+      .notNull()
+      .references(() => saleDocuments.id, { onDelete: "cascade" }),
+    kind: saleDocumentNoteKindEnum("kind").notNull(),
+    // For notes, the note itself; for a void, the batch (RA/RC) id.
+    motorId: uuid("motor_id"),
+    number: text("number"),
+    reasonCode: text("reason_code"),
+    reasonText: text("reason_text").notNull(),
+    motorStatus: text("motor_status"),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("sale_document_notes_document_idx").on(table.saleDocumentId)],
+);
+
+// Invoicing settings: a single row (id 1).
+export const eInvoicingSettings = pgTable(
+  "e_invoicing_settings",
+  {
+    id: integer("id").primaryKey().default(1),
+    boletaSeries: text("boleta_series").notNull().default("B001"),
+    facturaSeries: text("factura_series").notNull().default("F001"),
+    creditNoteBoletaSeries: text("credit_note_boleta_series")
+      .notNull()
+      .default("BC01"),
+    creditNoteFacturaSeries: text("credit_note_factura_series")
+      .notNull()
+      .default("FC01"),
+    debitNoteBoletaSeries: text("debit_note_boleta_series")
+      .notNull()
+      .default("BD01"),
+    debitNoteFacturaSeries: text("debit_note_factura_series")
+      .notNull()
+      .default("FD01"),
+    // When set, every line uses it instead of the product's affectation.
+    globalIgvOverride: text("global_igv_override"),
+    // Emergency switch: false keeps documents queued without sending them.
+    autoEmitEnabled: boolean("auto_emit_enabled").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check("e_invoicing_settings_single_row", sql`${table.id} = 1`),
+    check(
+      "e_invoicing_settings_override_valid",
+      sql`${table.globalIgvOverride} is null or ${table.globalIgvOverride} in ('10', '20', '30')`,
+    ),
+  ],
+);
+
+export const saleDocumentsRelations = relations(saleDocuments, ({ one, many }) => ({
+  sale: one(sales, {
+    fields: [saleDocuments.saleId],
+    references: [sales.id],
+  }),
+  notes: many(saleDocumentNotes),
+}));
+
+export const saleDocumentNotesRelations = relations(saleDocumentNotes, ({ one }) => ({
+  document: one(saleDocuments, {
+    fields: [saleDocumentNotes.saleDocumentId],
+    references: [saleDocuments.id],
   }),
 }));
