@@ -1,5 +1,6 @@
 import type { WorkShift } from "@/domain/entities/attendance";
 import type { PaymentType } from "@/domain/entities/sale";
+import type { SaleDocumentRequest } from "@/domain/entities/sale-document";
 import type { CaptureSource } from "@/domain/value-objects/capture-source";
 import type { WorkerDiscountUsage, WorkerStatus, WorkerVerification } from "@/domain/entities/worker";
 
@@ -44,6 +45,9 @@ export type PendingSale = {
   promoDiscountId?: number;
   // Worker points spent as whole soles off the sale (absent when none).
   pointsRedeemed?: number;
+  // Electronic document the cashier chose (absent on sales queued before
+  // invoicing: the server makes them an anonymous boleta).
+  document?: SaleDocumentRequest;
   status: "pending" | "syncing" | "error";
   errorMessage?: string;
 };

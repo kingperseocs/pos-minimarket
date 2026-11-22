@@ -12,6 +12,7 @@ import type { PromoDiscountRepository } from "@/domain/repositories/promo-discou
 import type { SaleRepository } from "@/domain/repositories/sale-repository";
 import type { UserRepository } from "@/domain/repositories/user-repository";
 import type { WorkerRepository } from "@/domain/repositories/worker-repository";
+import { planSaleDocument } from "@/domain/services/e-invoice";
 import { evaluateSaleFlags } from "@/domain/services/sale-audit";
 import { lineTotal } from "@/domain/services/sale-pricing";
 import { round2, saleRounding } from "@/domain/value-objects/money";
@@ -173,7 +174,7 @@ export async function createSaleUseCase(
     promoDiscountPercent: promo?.percent ?? 0,
   };
 
-  return repos.sales.insertWithItems(record);
+  return repos.sales.insertWithItems(record, planSaleDocument(record, data.document));
 }
 
 // Points the POS says it redeemed, checked against the policy the sale was

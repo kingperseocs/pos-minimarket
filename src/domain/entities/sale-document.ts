@@ -51,7 +51,8 @@ export type ReviewReason =
   | "gift"
   | "redeem"
   | "rounding"
-  | "total_mismatch";
+  | "total_mismatch"
+  | "invalid_customer";
 
 export const REVIEW_REASON_LABELS: Record<ReviewReason, string> = {
   discount: "Tiene descuento",
@@ -59,7 +60,21 @@ export const REVIEW_REASON_LABELS: Record<ReviewReason, string> = {
   redeem: "Canjeó puntos",
   rounding: "Tiene redondeo",
   total_mismatch: "El total no cuadra con los productos",
+  invalid_customer: "Faltan o son inválidos los datos del cliente",
 };
+
+// The document a newly synced sale gets (inserted with the sale, in the same
+// transaction). The series is taken from the settings at insert time.
+export interface NewSaleDocument {
+  docType: SaleDocumentType;
+  customerDocType: CustomerDocType;
+  customerDocNumber: string | null;
+  customerName: string | null;
+  customerAddress: string | null;
+  status: "queued" | "review";
+  reviewReasons: ReviewReason[];
+  idempotencyKey: string;
+}
 
 // SUNAT catalog 07.
 export type IgvAffectation = "10" | "20" | "30";

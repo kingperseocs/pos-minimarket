@@ -7,6 +7,7 @@ import {
   documentCustomerFields,
   documentRequestErrors,
   lineAffectation,
+  planSaleDocument,
   reviewReasons,
   seriesFor,
   totalsMatch,
@@ -197,5 +198,21 @@ describe("buildIssueRequest", () => {
     });
     assert.equal(request.items[0].afectacion_igv, "20");
     assert.equal(request.cajero, undefined);
+  });
+});
+
+describe("planSaleDocument", () => {
+  it("without a request it is an anonymous boleta keyed by the sale uuid", () => {
+    const doc = planSaleDocument(sale(), undefined);
+    assert.equal(doc.docType, "boleta");
+    assert.equal(doc.status, "queued");
+    assert.equal(doc.idempotencyKey, sale().uuid);
+  });
+
+  it("an anonymous boleta above S/ 700 waits in review", () => {
+    const big = sale({ items: [item({ unitPrice: 800, quantity: 1, lineTotal: 800 })], subtotal: 800, total: 800 });
+    const doc = planSaleDocument(big, { type: "boleta" });
+    assert.equal(doc.status, "review");
+    assert.deepEqual(doc.reviewReasons, ["invalid_customer"]);
   });
 });

@@ -1,11 +1,14 @@
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { AuditFlag } from "@/domain/entities/audit";
 import type { Sale, SaleRecord } from "@/domain/entities/sale";
+import type { NewSaleDocument } from "@/domain/entities/sale-document";
 import type { SaleRepository } from "@/domain/repositories/sale-repository";
 import { db } from "@/infrastructure/db/client";
 import {
+  eInvoicingSettings,
   loyaltyLedger,
   products,
+  saleDocuments,
   saleItems,
   sales,
   workers,
@@ -74,7 +77,7 @@ const withRelations = {
 
 export class DrizzleSaleRepository implements SaleRepository {
   // Amounts arrive already re-priced and audited by createSaleUseCase.
-  async insertWithItems(record: SaleRecord) {
+  async insertWithItems(record: SaleRecord, document?: NewSaleDocument) {
     const inserted = await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(sales)
@@ -140,6 +143,33 @@ export class DrizzleSaleRepository implements SaleRepository {
       );
 
       await moveStockForSale(tx, record, saleId, catalog);
+
+      if (document) {
+        // The series in force when the sale reached the server.
+        const [settings] = await tx
+          .select({
+            boleta: eInvoicingSettings.boletaSeries,
+            factura: eInvoicingSettings.facturaSeries,
+          })
+          .from(eInvoicingSettings)
+          .where(eq(eInvoicingSettings.id, 1));
+        await tx.insert(saleDocuments).values({
+          saleId,
+          saleUuid: record.uuid,
+          docType: document.docType,
+          series:
+            document.docType === "factura"
+              ? (settings?.factura ?? "F001")
+              : (settings?.boleta ?? "B001"),
+          customerDocType: document.customerDocType,
+          customerDocNumber: document.customerDocNumber,
+          customerName: document.customerName,
+          customerAddress: document.customerAddress,
+          status: document.status,
+          reviewReasons: document.reviewReasons,
+          idempotencyKey: document.idempotencyKey,
+        });
+      }
 
       if (record.workerId) {
         // Redeemed points leave even if the balance goes negative: the

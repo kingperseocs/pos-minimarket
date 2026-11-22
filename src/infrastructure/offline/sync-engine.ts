@@ -110,6 +110,7 @@ export async function runSync() {
           policyId: sale.policyId,
           promoDiscountId: sale.promoDiscountId,
           pointsRedeemed: sale.pointsRedeemed,
+          document: sale.document,
         });
         salesSynced++;
       } catch (error) {

@@ -50,6 +50,22 @@ export const saleCreateSchema = z.object({
   // The till shift it was charged in. Optional: sales queued before shifts
   // existed keep syncing.
   shiftUuid: z.uuid().optional(),
+  // Electronic document the cashier chose. Optional: sales queued before
+  // invoicing existed become an anonymous boleta.
+  document: z
+    .object({
+      type: z.enum(["boleta", "factura"]),
+      customer: z
+        .object({
+          docType: z.enum(["1", "6"]),
+          number: z.string().trim().max(15),
+          name: z.string().trim().max(200),
+          address: z.string().trim().max(300).nullable().optional(),
+        })
+        .nullable()
+        .optional(),
+    })
+    .optional(),
 });
 
 export type SaleItemInput = z.infer<typeof saleItemSchema>;

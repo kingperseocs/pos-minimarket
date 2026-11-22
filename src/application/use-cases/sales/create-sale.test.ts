@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SaleRecord } from "@/domain/entities/sale";
+import type { NewSaleDocument } from "@/domain/entities/sale-document";
 import { type CreateSaleDeps, checkRedemption, createSaleUseCase } from "./create-sale";
 
 // Just enough of the repositories to price and store a sale.
 function fakeDeps() {
   const stored: SaleRecord[] = [];
+  const documents: (NewSaleDocument | undefined)[] = [];
   const deps = {
     users: {
       async findById(id: number) {
@@ -16,8 +18,9 @@ function fakeDeps() {
       async existsByUuid() {
         return false;
       },
-      async insertWithItems(record: SaleRecord) {
+      async insertWithItems(record: SaleRecord, document?: NewSaleDocument) {
         stored.push(record);
+        documents.push(document);
         return { id: 1, uuid: record.uuid, total: record.total, inserted: true };
       },
     },
@@ -30,7 +33,7 @@ function fakeDeps() {
     policies: { async findById() { return null; }, async getActive() { return null; } },
     promos: { async findById() { return null; } },
   } as unknown as CreateSaleDeps;
-  return { deps, stored };
+  return { deps, stored, documents };
 }
 
 // Gaseosa 5.00 and Papas 3.00 with 20% off: 6.40.
@@ -125,5 +128,69 @@ describe("createSaleUseCase redemption", () => {
     assert.equal(stored[0].pointsRedeemed, 0);
     assert.equal(stored[0].total, 6.4);
     assert.ok(stored[0].auditFlags.includes("REDEEM_MISMATCH"));
+  });
+});
+
+// Gaseosa 3.50 × 2, no discounts: 7.00.
+const plainSale = {
+  uuid: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+  paymentType: "cash",
+  items: [{ productId: 1, productName: "Gaseosa", unitPrice: 3.5, quantity: 2, lineTotal: 7 }],
+  total: 7,
+  clientCreatedAt: "2026-11-22T15:00:00.000Z",
+};
+
+describe("createSaleUseCase electronic document", () => {
+  it("a sale queued before invoicing becomes an anonymous boleta, queued", async () => {
+    const { deps, documents } = fakeDeps();
+    await createSaleUseCase(deps, plainSale, 1);
+    assert.deepEqual(documents[0], {
+      docType: "boleta",
+      customerDocType: "0",
+      customerDocNumber: null,
+      customerName: null,
+      customerAddress: null,
+      status: "queued",
+      reviewReasons: [],
+      idempotencyKey: plainSale.uuid,
+    });
+  });
+
+  it("keeps the factura customer the cashier entered", async () => {
+    const { deps, documents } = fakeDeps();
+    await createSaleUseCase(
+      deps,
+      {
+        ...plainSale,
+        document: {
+          type: "factura",
+          customer: { docType: "6", number: "20100055237", name: "Alicorp S.A.A.", address: "Av. Argentina 4793" },
+        },
+      },
+      1,
+    );
+    assert.equal(documents[0]?.docType, "factura");
+    assert.equal(documents[0]?.customerName, "ALICORP S.A.A.");
+    assert.equal(documents[0]?.status, "queued");
+  });
+
+  it("a factura without a valid RUC is saved but waits in review", async () => {
+    const { deps, stored, documents } = fakeDeps();
+    await createSaleUseCase(
+      deps,
+      { ...plainSale, document: { type: "factura", customer: { docType: "6", number: "123", name: "X" } } },
+      1,
+    );
+    assert.equal(stored.length, 1, "the sale itself is never rejected");
+    assert.equal(documents[0]?.status, "review");
+    assert.deepEqual(documents[0]?.reviewReasons, ["invalid_customer"]);
+    assert.equal(documents[0]?.customerDocType, "0");
+  });
+
+  it("a discounted sale waits in review", async () => {
+    const { deps, documents } = fakeDeps();
+    await createSaleUseCase(deps, { ...discountedSale, roundingAmount: 0 }, 1);
+    assert.equal(documents[0]?.status, "review");
+    assert.deepEqual(documents[0]?.reviewReasons, ["discount", "rounding"]);
   });
 });

@@ -7,6 +7,7 @@ import type {
   CustomerDocType,
   EInvoicingSettings,
   IgvAffectation,
+  NewSaleDocument,
   ReviewReason,
   SaleDocumentRequest,
 } from "../entities/sale-document";
@@ -74,6 +75,28 @@ export function documentRequestErrors(
     errors.push("Falta el nombre o la razón social del cliente.");
   }
   return errors;
+}
+
+// The document a sale gets when it reaches the server. Every sale gets one
+// (decision of 2026-11-22). Without a request (sales queued by older POS
+// versions) it is an anonymous boleta. If the customer data is missing or
+// invalid, or the sale has discounts and the like, it waits in review: the
+// money was already taken, so the sale itself is never rejected.
+export function planSaleDocument(
+  sale: SaleRecord,
+  request: SaleDocumentRequest | undefined,
+): NewSaleDocument {
+  const chosen: SaleDocumentRequest = request ?? { type: "boleta" };
+  const reasons = reviewReasons(sale);
+  const valid = documentRequestErrors(chosen, sale.total).length === 0;
+  if (!valid) reasons.push("invalid_customer");
+  return {
+    docType: chosen.type,
+    ...documentCustomerFields(valid ? chosen : { type: chosen.type }),
+    status: reasons.length === 0 ? "queued" : "review",
+    reviewReasons: reasons,
+    idempotencyKey: sale.uuid,
+  };
 }
 
 // The customer as stored on the document ("clientes varios" when none).
