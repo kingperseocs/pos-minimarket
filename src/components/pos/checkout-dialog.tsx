@@ -9,11 +9,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PAYMENT_TYPE_LABELS, type PaymentType } from "@/domain/entities/sale";
+import type { SaleDocumentRequest } from "@/domain/entities/sale-document";
+import { documentRequestErrors } from "@/domain/services/e-invoice";
 import type { SalePricing } from "@/domain/services/sale-pricing";
 import { STORE_TIME_ZONE } from "@/domain/value-objects/store-time";
 import { BUSINESS } from "@/lib/business";
 import { formatSoles } from "@/lib/money";
 import type { CartItem } from "@/types";
+import { DocumentPicker } from "./document-picker";
 import { PAYMENT_TYPE_ICONS } from "./pos-icons";
 
 const dateTime = new Intl.DateTimeFormat("es-PE", {
@@ -54,6 +57,8 @@ export function CheckoutDialog({
   workerName,
   promoName,
   paymentType,
+  document,
+  onDocumentChange,
   onOpenChange,
   onConfirm,
 }: {
@@ -65,11 +70,15 @@ export function CheckoutDialog({
   // Name of the percentage discount applied, if any.
   promoName: string | null;
   paymentType: PaymentType;
+  // Electronic document to issue (boleta by default).
+  document: SaleDocumentRequest;
+  onDocumentChange: (document: SaleDocumentRequest) => void;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }) {
   const Icon = PAYMENT_TYPE_ICONS[paymentType];
   const units = items.reduce((sum, item) => sum + item.quantity, 0);
+  const documentValid = documentRequestErrors(document, pricing.total).length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -198,9 +207,12 @@ export function CheckoutDialog({
           <p className="text-center text-[11px] text-neutral-500">
             ¡Gracias por su compra!
             <br />
-            Comprobante interno · no reemplaza a la boleta electrónica
+            Vista previa · al confirmar se emite e imprime la{" "}
+            {document.type === "factura" ? "factura" : "boleta"} electrónica
           </p>
         </div>
+
+        <DocumentPicker value={document} total={pricing.total} onChange={onDocumentChange} />
 
         <DialogFooter className="mx-0 mb-0 gap-2 border-0 bg-transparent p-0 sm:gap-2">
           <Button
@@ -210,7 +222,12 @@ export function CheckoutDialog({
           >
             Volver
           </Button>
-          <Button className="h-12 text-base font-semibold" autoFocus onClick={onConfirm}>
+          <Button
+            className="h-12 text-base font-semibold"
+            autoFocus
+            disabled={!documentValid}
+            onClick={onConfirm}
+          >
             Confirmar venta · {formatSoles(pricing.total)}
           </Button>
         </DialogFooter>

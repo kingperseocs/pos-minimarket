@@ -174,6 +174,11 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
       .where(eq(saleDocuments.id, id));
   }
 
+  async findById(id: number): Promise<SaleDocument | null> {
+    const [row] = await db.select().from(saleDocuments).where(eq(saleDocuments.id, id));
+    return row ? toSaleDocument(row) : null;
+  }
+
   async findBySaleUuid(saleUuid: string): Promise<SaleDocument | null> {
     const [row] = await db.select().from(saleDocuments).where(eq(saleDocuments.saleUuid, saleUuid));
     return row ? toSaleDocument(row) : null;

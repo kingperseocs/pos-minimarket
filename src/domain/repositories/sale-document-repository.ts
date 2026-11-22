@@ -27,4 +27,5 @@ export interface SaleDocumentRepository {
   // The motor refused it: no automatic retry until someone fixes it.
   markRejected(id: number, error: string): Promise<void>;
   findBySaleUuid(saleUuid: string): Promise<SaleDocument | null>;
+  findById(id: number): Promise<SaleDocument | null>;
 }

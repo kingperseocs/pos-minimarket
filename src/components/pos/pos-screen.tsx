@@ -43,6 +43,8 @@ import { formatSoles } from "@/lib/money";
 import { CartPanel, type PromoOption } from "./cart-panel";
 import { type SidebarCategory, CategorySidebar } from "./category-sidebar";
 import { CheckoutDialog } from "./checkout-dialog";
+import { SaleDocumentDialog } from "./sale-document-dialog";
+import type { SaleDocumentRequest, SaleDocumentType } from "@/domain/entities/sale-document";
 import { type ShelfExpiry, ExpiryReminder } from "./expiry-reminder";
 import { OfflineIndicator } from "./offline-indicator";
 import { OpenShiftPanel } from "./open-shift-panel";
@@ -92,6 +94,10 @@ export function PosScreen({
   // Selling needs an open till shift ("Abrir caja") on this device.
   const cash = useCashShift(cashierId);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  // Electronic document of the sale being charged (boleta by default), and
+  // the sale whose document the till is waiting for after confirming.
+  const [saleDocument, setSaleDocument] = useState<SaleDocumentRequest>({ type: "boleta" });
+  const [issuing, setIssuing] = useState<{ uuid: string; docType: SaleDocumentType } | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [paymentType, setPaymentType] = useState<PaymentType>("cash");
@@ -302,6 +308,7 @@ export function PosScreen({
       }),
       ...(pricing.promo && { promoDiscountId: pricing.promo.id }),
       ...(worker && pricing.pointsRedeemed > 0 && { pointsRedeemed: pricing.pointsRedeemed }),
+      document: saleDocument,
       status: "pending",
     };
     const workerName = worker?.applied.fullName;
@@ -315,6 +322,8 @@ export function PosScreen({
 
     cart.clear();
     setCheckoutOpen(false);
+    setIssuing({ uuid: sale.id, docType: saleDocument.type });
+    setSaleDocument({ type: "boleta" });
     // The worker belongs to this sale only: the next customer starts clean,
     // with a new sale uuid.
     setWorker(null);
@@ -596,8 +605,16 @@ export function PosScreen({
         workerName={worker?.applied.fullName ?? null}
         promoName={pricing.promo ? (promo?.name ?? null) : null}
         paymentType={paymentType}
+        document={saleDocument}
+        onDocumentChange={setSaleDocument}
         onOpenChange={setCheckoutOpen}
         onConfirm={handleConfirm}
+      />
+      <SaleDocumentDialog
+        key={issuing?.uuid ?? "none"}
+        saleUuid={issuing?.uuid ?? null}
+        docType={issuing?.docType ?? "boleta"}
+        onClose={() => setIssuing(null)}
       />
       {worker && (
         // Keyed by worker: wrong attempts don't carry over to another one.
