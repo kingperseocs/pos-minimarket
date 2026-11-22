@@ -1,4 +1,4 @@
-import { ChartColumnIcon, FlaskConicalIcon, XIcon } from "lucide-react";
+import { BanknoteIcon, ChartColumnIcon, FlaskConicalIcon, ReceiptIcon, ShoppingBagIcon, TrendingUpIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import type { SalesAnalyticsReport } from "@/application/use-cases/dashboard/sales-analytics";
 import { EmptyState } from "@/components/empty-state";
@@ -126,24 +126,32 @@ export function SalesAnalyticsSection({
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-4">
             <KpiTile
               label="Ventas"
+              icon={BanknoteIcon}
+              tone="emerald"
               value={formatSoles(report.current.revenue)}
               change={report.changes.revenue}
               hint={`Frente a ${report.previousLabel}`}
             />
             <KpiTile
               label="Compras atendidas"
+              icon={ShoppingBagIcon}
+              tone="sky"
               value={String(report.current.orders)}
               change={report.changes.orders}
               hint="Cuántas veces cobraste"
             />
             <KpiTile
               label="Gasto promedio por cliente"
+              icon={ReceiptIcon}
+              tone="violet"
               value={formatSoles(report.averageTicket)}
               change={report.changes.averageTicket}
               hint="Lo que deja cada compra"
             />
             <KpiTile
               label="Ganancia aproximada"
+              icon={TrendingUpIcon}
+              tone="amber"
               value={report.current.profit === null ? "—" : formatSoles(report.current.profit)}
               change={report.changes.profit}
               hint={

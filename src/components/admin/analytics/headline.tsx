@@ -1,4 +1,4 @@
-import { ArrowDownIcon, ArrowUpIcon, MinusIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, type LucideIcon, MinusIcon } from "lucide-react";
 import type { SalesAnalyticsReport } from "@/application/use-cases/dashboard/sales-analytics";
 import { STEADY_THRESHOLD } from "@/domain/services/sales-insights";
 import { formatSoles } from "@/lib/money";
@@ -60,25 +60,57 @@ export function DeltaChip({
   );
 }
 
+// Pastel tones for the KPI tiles (same palette as the documents screen).
+const KPI_TONES = {
+  emerald: {
+    tile: "bg-emerald-50 ring-emerald-200 text-emerald-950 dark:bg-emerald-950/40 dark:ring-emerald-900 dark:text-emerald-50",
+    badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300",
+  },
+  sky: {
+    tile: "bg-sky-50 ring-sky-200 text-sky-950 dark:bg-sky-950/40 dark:ring-sky-900 dark:text-sky-50",
+    badge: "bg-sky-100 text-sky-700 dark:bg-sky-900/60 dark:text-sky-300",
+  },
+  violet: {
+    tile: "bg-violet-50 ring-violet-200 text-violet-950 dark:bg-violet-950/40 dark:ring-violet-900 dark:text-violet-50",
+    badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/60 dark:text-violet-300",
+  },
+  amber: {
+    tile: "bg-amber-50 ring-amber-200 text-amber-950 dark:bg-amber-950/40 dark:ring-amber-900 dark:text-amber-50",
+    badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300",
+  },
+} as const;
+
 export function KpiTile({
   label,
   value,
   change,
   hint,
+  icon: Icon,
+  tone = "sky",
 }: {
   label: string;
   value: string;
   change: number | null;
   hint: string;
+  icon?: LucideIcon;
+  tone?: keyof typeof KPI_TONES;
 }) {
+  const colors = KPI_TONES[tone];
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 rounded-xl border bg-card p-4 shadow-xs">
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="truncate font-heading text-2xl font-semibold">{value}</p>
+    <div className={cn("flex min-w-0 flex-col gap-1.5 rounded-xl p-4 shadow-sm ring-1", colors.tile)}>
+      <div className="flex items-center gap-2">
+        {Icon && (
+          <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full", colors.badge)}>
+            <Icon className="size-5" aria-hidden />
+          </span>
+        )}
+        <p className="text-sm font-semibold">{label}</p>
+      </div>
+      <p className="truncate font-heading text-3xl font-bold tabular-nums">{value}</p>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <DeltaChip change={change} />
       </div>
-      <p className="text-xs text-muted-foreground">{hint}</p>
+      <p className="text-xs font-medium opacity-75">{hint}</p>
     </div>
   );
 }
