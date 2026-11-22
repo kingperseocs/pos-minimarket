@@ -92,6 +92,9 @@ const productFields = z.object({
       .nullable(),
   ),
   netContentUnit: z.preprocess(blankToNull, z.enum(NET_UNITS).nullable()),
+  // IGV of its electronic documents (catalog 07): 10 gravado until the
+  // accountant confirms otherwise (D-18).
+  igvAffectation: z.enum(["10", "20", "30"]).default("10"),
   // Presentations to create from the catalog format; omitted = none.
   packaging: packagingSchema.nullable().optional(),
 });

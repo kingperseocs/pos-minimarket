@@ -1,4 +1,5 @@
 import type { NetUnit } from "../services/packaging";
+import type { IgvAffectation } from "./sale-document";
 import type { CategoryIcon } from "./category";
 
 // priceCost/stockQuantity/trackStock exist for a future inventory phase and
@@ -26,6 +27,8 @@ export interface Product {
   // One unit's content, as in the catalog ("31.5 g"); null = not entered.
   netContent: number | null;
   netContentUnit: NetUnit | null;
+  // SUNAT catalog 07 for its boletas / facturas (10 gravado by default).
+  igvAffectation: IgvAffectation;
   isActive: boolean;
 }
 

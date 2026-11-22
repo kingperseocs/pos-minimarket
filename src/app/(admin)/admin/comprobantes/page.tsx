@@ -1,4 +1,4 @@
-import { BanIcon, ChartColumnIcon, CircleCheckBigIcon, SendIcon, TriangleAlertIcon } from "lucide-react";
+import { BanIcon, ChartColumnIcon, CircleCheckBigIcon, SendIcon, SettingsIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { listSaleDocumentsUseCase } from "@/application/use-cases/e-invoicing/list-sale-documents";
@@ -121,6 +121,9 @@ export default async function AdminDocumentsPage({ searchParams }: PageProps<"/a
           >
             <ChartColumnIcon data-icon="inline-start" />
             Reporte del día
+          </Button>
+          <Button variant="outline" size="icon" aria-label="Configuración" nativeButton={false} render={<Link href="/admin/comprobantes/configuracion" />}>
+            <SettingsIcon />
           </Button>
         </div>
       </div>

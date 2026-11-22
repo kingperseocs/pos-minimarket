@@ -1,6 +1,7 @@
 "use client";
 
 import { BoxesIcon, PencilIcon, RotateCcwIcon, Trash2Icon } from "lucide-react";
+import type { IgvAffectation } from "@/domain/entities/sale-document";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { deactivateProduct, reactivateProduct } from "@/actions/products";
@@ -43,6 +44,7 @@ type Product = {
   imageUrl: string | null;
   netContent: string | null;
   netContentUnit: NetUnit | null;
+  igvAffectation: IgvAffectation;
   isActive: boolean;
 };
 

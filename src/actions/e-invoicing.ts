@@ -20,11 +20,13 @@ import {
   refreshDocumentNotes,
   voidDocument,
 } from "@/application/use-cases/e-invoicing/notes";
+import { updateSettingsUseCase } from "@/application/use-cases/e-invoicing/settings";
 import { idSchema } from "@/application/validation/id";
 import { can } from "@/domain/entities/user";
 import { ValidationError } from "@/domain/errors";
 import { requirePermission } from "@/infrastructure/auth/guards";
 import { eInvoicingDeps, eInvoicingNotesDeps } from "@/infrastructure/deps";
+import { eInvoicingSettingsRepository } from "@/infrastructure/repositories";
 import { runDataAction } from "./action-result";
 
 const requireAdmin = () => requirePermission("manage");
@@ -213,5 +215,15 @@ export async function getDocumentDetail(id: number) {
         motorStatus: n.motorStatus,
       })),
     };
+  });
+}
+
+// Series and IGV of the electronic documents (admin only).
+export async function updateInvoicingSettings(input: unknown) {
+  return runDataAction(async () => {
+    await requireAdmin();
+    const saved = await updateSettingsUseCase(eInvoicingSettingsRepository, input);
+    revalidatePath("/admin/comprobantes", "layout");
+    return saved;
   });
 }

@@ -1,5 +1,6 @@
 import type { Product, ProductCatalogEntry } from "../entities/product";
 import type { NetUnit } from "../services/packaging";
+import type { IgvAffectation } from "../entities/sale-document";
 
 export interface CreateProductData {
   name: string;
@@ -14,6 +15,7 @@ export interface CreateProductData {
   imageUrl?: string | null;
   netContent: number | null;
   netContentUnit: NetUnit | null;
+  igvAffectation: IgvAffectation;
 }
 
 export interface UpdateProductData extends CreateProductData {

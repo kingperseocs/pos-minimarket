@@ -176,6 +176,7 @@ async function ProductsContent({ filters }: { filters: Filters }) {
             imageUrl: p.imageUrl,
             netContent: p.netContent === null ? null : String(p.netContent),
             netContentUnit: p.netContentUnit,
+            igvAffectation: p.igvAffectation,
             isActive: p.isActive,
           }))}
         />

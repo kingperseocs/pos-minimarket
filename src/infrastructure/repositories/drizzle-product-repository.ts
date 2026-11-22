@@ -1,4 +1,5 @@
 import { and, asc, eq, exists, gt, inArray, ne } from "drizzle-orm";
+import type { IgvAffectation } from "@/domain/entities/sale-document";
 import type { CategoryIcon } from "@/domain/entities/category";
 import type { Product, ProductCatalogEntry } from "@/domain/entities/product";
 import { tracksExpiry } from "@/domain/services/expiry";
@@ -41,6 +42,7 @@ function toProduct({ product: row, category }: ProductRow): Product {
     imageUrl: row.imageUrl,
     netContent: row.netContent === null ? null : Number(row.netContent),
     netContentUnit: row.netContentUnit as NetUnit | null,
+    igvAffectation: row.igvAffectation as IgvAffectation,
     isActive: row.isActive,
   };
 }
@@ -112,6 +114,7 @@ export class DrizzleProductRepository implements ProductRepository {
       imageUrl: data.imageUrl ?? null,
       netContent: data.netContent?.toString() ?? null,
       netContentUnit: data.netContentUnit,
+      igvAffectation: data.igvAffectation,
     }).returning({ id: products.id });
     return row.id;
   }
@@ -130,6 +133,7 @@ export class DrizzleProductRepository implements ProductRepository {
         imageUrl: data.imageUrl,
         netContent: data.netContent?.toString() ?? null,
         netContentUnit: data.netContentUnit,
+        igvAffectation: data.igvAffectation,
         updatedAt: new Date(),
       })
       .where(eq(products.id, data.id));

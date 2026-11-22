@@ -43,6 +43,7 @@ import {
   packagingInput,
 } from "./packaging-field";
 import type { NetUnit } from "@/domain/services/packaging";
+import { IGV_AFFECTATIONS, IGV_AFFECTATION_LABELS, type IgvAffectation } from "@/domain/entities/sale-document";
 import { PriceCostInfo, PriceSaleInfo } from "./price-info";
 import { ProfitPreview } from "./profit-preview";
 
@@ -60,6 +61,7 @@ type Product = {
   imageUrl: string | null;
   netContent?: string | null;
   netContentUnit?: NetUnit | null;
+  igvAffectation?: IgvAffectation;
   // Its presentations: the catalog format only creates them when there are
   // none yet.
   presentations?: { name: string; unitsTotal: number; isActive: boolean }[];
@@ -131,6 +133,7 @@ export function ProductForm({
     toExpiryChoice(product?.tracksExpiry),
   );
   const [imageUrl, setImageUrl] = useState(savedImageUrl);
+  const [igvAffectation, setIgvAffectation] = useState<IgvAffectation>(product?.igvAffectation ?? "10");
   const [uploading, setUploading] = useState(false);
 
   const savedPackaging: PackagingValue = {
@@ -251,6 +254,7 @@ export function ProductForm({
         imageUrl,
         netContent: packaging.netContent,
         netContentUnit: packaging.netUnit,
+        igvAffectation,
         // Presentations from the catalog formats, only while there are none.
         packaging: existingPresentations.length === 0 ? packagingInput(packaging) : null,
       };
@@ -436,6 +440,29 @@ export function ProductForm({
                     priceSale={Number(priceSale) || 0}
                     priceCost={priceCost === "" ? null : Number(priceCost)}
                   />
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="product-igv">IGV en la boleta / factura</Label>
+                    <Select
+                      items={IGV_AFFECTATIONS.map((a) => ({ value: a, label: IGV_AFFECTATION_LABELS[a] }))}
+                      value={igvAffectation}
+                      onValueChange={(next) => next && setIgvAffectation(next as IgvAffectation)}
+                    >
+                      <SelectTrigger id="product-igv" className="h-10 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {IGV_AFFECTATIONS.map((a) => (
+                          <SelectItem key={a} value={a}>
+                            {IGV_AFFECTATION_LABELS[a]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Gravado por defecto. Cámbialo solo si tu contador lo indica; el ajuste global de
+                      Comprobantes → Configuración tiene prioridad.
+                    </p>
+                  </div>
                   <div className="flex flex-col gap-2">
                     <Label id="product-expiry-label">Fecha de vencimiento</Label>
                     <ToggleGroup
