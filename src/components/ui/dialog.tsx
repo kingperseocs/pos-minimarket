@@ -41,15 +41,18 @@ function DialogOverlay({
 
 function DialogContent({
   className,
+  overlayClassName,
   children,
   showCloseButton = true,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  // Lets a dialog darken the page its own way (e.g. without the blur).
+  overlayClassName?: string
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(

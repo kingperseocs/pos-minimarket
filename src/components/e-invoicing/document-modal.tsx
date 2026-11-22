@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
+import { ChevronDownIcon, LoaderCircleIcon, XIcon } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
@@ -16,7 +16,14 @@ import {
 } from "@/actions/e-invoicing";
 import { openDocumentPdf, printDocumentPdf } from "@/components/e-invoicing/print-pdf";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   CREDIT_NOTE_REASONS,
@@ -227,9 +234,18 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
         <DialogContent
           // Slides up into place when it opens, as on KeyFacil.
           className="gap-0 overflow-hidden p-0 duration-300 ease-out sm:max-w-md data-open:zoom-in-100 data-open:slide-in-from-bottom-16 data-closed:zoom-out-100 data-closed:slide-out-to-bottom-8 data-closed:duration-200"
+          // A plain dark veil, no blur, as on KeyFacil.
+          overlayClassName="bg-black/50 supports-backdrop-filter:backdrop-blur-none"
+          showCloseButton={false}
         >
-          <div className="bg-primary px-5 py-4 text-primary-foreground">
+          <div className="flex items-center justify-between bg-primary px-5 py-4 text-primary-foreground">
             <DialogTitle className="text-lg font-semibold">Comprobante electrónico</DialogTitle>
+            <DialogClose
+              aria-label="Cerrar"
+              className="rounded-full p-1 text-primary-foreground transition hover:bg-primary-foreground/15"
+            >
+              <XIcon className="size-6" strokeWidth={2.75} />
+            </DialogClose>
             <DialogDescription className="sr-only">Acciones del comprobante.</DialogDescription>
           </div>
 
@@ -420,8 +436,7 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
                     Descargar CDR
                   </ActionButton>
                   <ActionButton
-                    variant="destructive"
-                    className="col-span-2"
+                    className="col-span-2 bg-red-600 text-white hover:bg-red-700"
                     disabled={!detail.canVoid}
                     onClick={() => openForm({ kind: "void" })}
                   >
@@ -456,7 +471,11 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
 
       {/* Annul, notes and customer fix: a dialog of their own on top. */}
       <Dialog open={form !== null} onOpenChange={(open) => !open && setForm(null)}>
-        <DialogContent className="duration-200 sm:max-w-sm data-open:slide-in-from-bottom-8" showCloseButton={false}>
+        <DialogContent
+          className="duration-200 sm:max-w-sm data-open:slide-in-from-bottom-8"
+          overlayClassName="bg-black/50 supports-backdrop-filter:backdrop-blur-none"
+          showCloseButton={false}
+        >
           <DialogTitle>{formTitle}</DialogTitle>
           <DialogDescription className="sr-only">Completa los datos y confirma.</DialogDescription>
           <form
