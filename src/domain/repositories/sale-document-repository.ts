@@ -1,5 +1,10 @@
 import type { SaleItemInput } from "../entities/sale";
-import type { IgvAffectation, SaleDocument } from "../entities/sale-document";
+import type {
+  IgvAffectation,
+  SaleDocument,
+  SaleDocumentFilters,
+  SaleDocumentListItem,
+} from "../entities/sale-document";
 import type { MotorDocument } from "./e-invoicing-gateway";
 
 // Everything needed to send one document to the motor, read when it is
@@ -28,4 +33,6 @@ export interface SaleDocumentRepository {
   markRejected(id: number, error: string): Promise<void>;
   findBySaleUuid(saleUuid: string): Promise<SaleDocument | null>;
   findById(id: number): Promise<SaleDocument | null>;
+  // Documents of the sales charged in [from, to], newest first.
+  list(filters: SaleDocumentFilters): Promise<SaleDocumentListItem[]>;
 }

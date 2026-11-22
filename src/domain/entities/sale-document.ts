@@ -122,3 +122,19 @@ export interface SaleDocument {
   issuedAt: Date | null;
   createdAt: Date;
 }
+
+// A document in a list (cashier's "Comprobantes de hoy", admin's screen),
+// with what the till charged.
+export interface SaleDocumentListItem extends SaleDocument {
+  saleTotal: number;
+  soldAt: Date;
+  cashierName: string | null;
+}
+
+export interface SaleDocumentFilters {
+  from: Date;
+  to: Date;
+  cashierId?: number;
+  status?: SaleDocumentStatus;
+  docType?: SaleDocumentType;
+}

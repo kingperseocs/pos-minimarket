@@ -1,4 +1,6 @@
-import { StoreIcon, UserRoundIcon } from "lucide-react";
+import { ReceiptTextIcon, StoreIcon, UserRoundIcon } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { AttendanceBadge } from "@/components/attendance/attendance-badge";
 import { AttendanceGate } from "@/components/attendance/attendance-gate";
 import { AttendanceProvider } from "@/components/attendance/attendance-provider";
@@ -44,6 +46,10 @@ export default async function CashierLayout({
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <AreaLinks role={user.role} current="sell" />
+            <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/pos/comprobantes" />}>
+              <ReceiptTextIcon data-icon="inline-start" />
+              <span className="hidden md:inline">Comprobantes</span>
+            </Button>
             <AttendanceBadge />
             <span className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
               <UserRoundIcon className="size-4" aria-hidden />

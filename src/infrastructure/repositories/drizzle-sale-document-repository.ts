@@ -1,9 +1,11 @@
-import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import type {
   CustomerDocType,
   IgvAffectation,
   ReviewReason,
   SaleDocument,
+  SaleDocumentFilters,
+  SaleDocumentListItem,
 } from "@/domain/entities/sale-document";
 import type { MotorDocument } from "@/domain/repositories/e-invoicing-gateway";
 import type {
@@ -172,6 +174,26 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
         updatedAt: sql`now()`,
       })
       .where(eq(saleDocuments.id, id));
+  }
+
+  async list(filters: SaleDocumentFilters): Promise<SaleDocumentListItem[]> {
+    const conditions = [gte(sales.clientCreatedAt, filters.from), lte(sales.clientCreatedAt, filters.to)];
+    if (filters.cashierId !== undefined) conditions.push(eq(sales.cashierId, filters.cashierId));
+    if (filters.status) conditions.push(eq(saleDocuments.status, filters.status));
+    if (filters.docType) conditions.push(eq(saleDocuments.docType, filters.docType));
+    const rows = await db
+      .select({ doc: saleDocuments, total: sales.total, soldAt: sales.clientCreatedAt, cashierName: users.name })
+      .from(saleDocuments)
+      .innerJoin(sales, eq(sales.id, saleDocuments.saleId))
+      .leftJoin(users, eq(users.id, sales.cashierId))
+      .where(and(...conditions))
+      .orderBy(desc(sales.clientCreatedAt));
+    return rows.map((r) => ({
+      ...toSaleDocument(r.doc),
+      saleTotal: Number(r.total),
+      soldAt: r.soldAt,
+      cashierName: r.cashierName,
+    }));
   }
 
   async findById(id: number): Promise<SaleDocument | null> {
