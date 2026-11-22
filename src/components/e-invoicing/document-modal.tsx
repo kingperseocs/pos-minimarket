@@ -492,7 +492,3 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
     </Dialog>
   );
 }
-
-export function reviewText(reasons: ReviewReason[]) {
-  return reasons.map((r) => REVIEW_REASON_LABELS[r]).join(", ");
-}

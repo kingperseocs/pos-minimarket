@@ -7,26 +7,11 @@ import { toast } from "sonner";
 import { DocumentStatusBadge } from "@/components/e-invoicing/document-status-badge";
 import { LiveRefresh } from "@/components/e-invoicing/live-refresh";
 import { Button } from "@/components/ui/button";
-import type { ReviewReason, SaleDocumentStatus, SaleDocumentType } from "@/domain/entities/sale-document";
+import { reviewText } from "./review-text";
+import type { DocumentCardRow } from "./card-row";
 import { STORE_TIME_ZONE } from "@/domain/value-objects/store-time";
-import { DocumentModal, FULL_TYPE_LABELS, reviewText } from "./document-modal";
+import { DocumentModal, FULL_TYPE_LABELS } from "./document-modal";
 
-export interface DocumentCardRow {
-  id: number;
-  docType: SaleDocumentType;
-  number: string | null;
-  status: SaleDocumentStatus;
-  motorStatus: string | null;
-  customerName: string | null;
-  customerDocNumber: string | null;
-  total: number;
-  soldAt: string;
-  lastError: string | null;
-  reviewReasons: ReviewReason[];
-  cashierName: string | null;
-  // Annulled, or cancelled by a credit note: it no longer counts for SUNAT.
-  cancelled: boolean;
-}
 
 const PAGE_SIZE = 10;
 
@@ -189,37 +174,4 @@ export function DocumentCardList({
       <DocumentModal key={openId ?? "none"} documentId={openId} onClose={() => setOpenId(null)} />
     </div>
   );
-}
-
-// Server rows → card rows (the same for the till and the admin).
-export function toCardRow(d: {
-  id: number;
-  docType: SaleDocumentType;
-  number: string | null;
-  status: SaleDocumentStatus;
-  motorStatus: string | null;
-  customerName: string | null;
-  customerDocNumber: string | null;
-  saleTotal: number;
-  soldAt: Date;
-  lastError: string | null;
-  reviewReasons: ReviewReason[];
-  cashierName: string | null;
-  cancelledByNote: boolean;
-}): DocumentCardRow {
-  return {
-    id: d.id,
-    docType: d.docType,
-    number: d.number,
-    status: d.status,
-    motorStatus: d.motorStatus,
-    customerName: d.customerName,
-    customerDocNumber: d.customerDocNumber,
-    total: d.saleTotal,
-    soldAt: d.soldAt.toISOString(),
-    lastError: d.lastError,
-    reviewReasons: d.reviewReasons,
-    cashierName: d.cashierName,
-    cancelled: d.status === "voided" || d.motorStatus === "ANULADO" || d.cancelledByNote,
-  };
 }
