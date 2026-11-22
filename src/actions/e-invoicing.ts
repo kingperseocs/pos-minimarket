@@ -5,6 +5,8 @@ import { z } from "zod";
 import { drainOutbox, type IssueOutcome } from "@/application/use-cases/e-invoicing/issue-sale-document";
 import {
   approveReviewedDocument,
+  canApprove,
+  canReissue,
   refreshDocumentStatus,
   reissueRejectedDocument,
   retryDocument,
@@ -148,6 +150,15 @@ export interface DocumentDetail {
   // SUNAT holds it as valid: annul and notes are possible.
   valid: boolean;
   canVoid: boolean;
+  // Admin only: what can be done about a document that is not issued well.
+  admin: {
+    canRetry: boolean;
+    canApprove: boolean;
+    canReissue: boolean;
+    reviewReasons: string[];
+    lastError: string | null;
+    customerAddress: string | null;
+  } | null;
   notes: { id: number; kind: string; number: string | null; reasonText: string; motorStatus: string | null }[];
 }
 
@@ -175,6 +186,16 @@ export async function getDocumentDetail(id: number) {
       hasMotorDocument: doc.motorId !== null,
       valid,
       canVoid: valid && canVoid(doc, new Date()),
+      admin: actor.isAdmin
+        ? {
+            canRetry: doc.status === "failed" || doc.status === "queued",
+            canApprove: canApprove(doc),
+            canReissue: canReissue(doc),
+            reviewReasons: doc.reviewReasons,
+            lastError: doc.lastError,
+            customerAddress: doc.customerAddress,
+          }
+        : null,
       notes: notes.map((n) => ({
         id: n.id,
         kind: n.kind,

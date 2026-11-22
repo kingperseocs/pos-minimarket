@@ -4,11 +4,14 @@ import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
+  approveDocument,
   creditNoteFor,
   debitNoteFor,
   type DocumentDetail,
   getDocumentDetail,
   refreshDocument,
+  reissueDocument,
+  retryDocumentNow,
   voidDocumentNow,
 } from "@/actions/e-invoicing";
 import { openDocumentPdf, printDocumentPdf } from "@/components/e-invoicing/print-pdf";
@@ -31,6 +34,13 @@ import {
 import { STORE_TIME_ZONE } from "@/domain/value-objects/store-time";
 import { formatSoles } from "@/lib/money";
 
+const OUTCOMES = {
+  issued: "Comprobante emitido.",
+  retry: "El sistema de facturación no respondió: se reintentará solo.",
+  rejected: "El sistema de facturación lo rechazó: revisa el motivo.",
+  skipped: "Ya se está enviando o no le toca todavía.",
+} as const;
+
 export const FULL_TYPE_LABELS = { boleta: "Boleta de Venta Electrónica", factura: "Factura Electrónica" } as const;
 
 const FORMATS = [
@@ -48,6 +58,7 @@ function ActionButton(props: React.ComponentProps<typeof Button>) {
 }
 
 type Form =
+  | { kind: "approve" }
   | { kind: "void" }
   | { kind: "credit"; code: string }
   | { kind: "debit"; code: string }
@@ -61,6 +72,7 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
   const [form, setForm] = useState<Form>(null);
   const [text, setText] = useState("");
   const [amount, setAmount] = useState("");
+  const [customer, setCustomer] = useState({ number: "", name: "", address: "" });
   const [isPending, startTransition] = useTransition();
 
   async function load(id: number) {
@@ -106,10 +118,49 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
     setForm(next);
     setText("");
     setAmount("");
+    if (next?.kind === "approve" && detail) {
+      setCustomer({
+        number: detail.customerDocNumber ?? "",
+        name: detail.customerName ?? "",
+        address: detail.admin?.customerAddress ?? "",
+      });
+    }
+  }
+
+  // Admin: retry, reissue a rejected one, or fix the customer and issue.
+  function adminAction(action: "retry" | "reissue") {
+    if (!detail) return;
+    startTransition(async () => {
+      const result = action === "retry" ? await retryDocumentNow(detail.id) : await reissueDocument(detail.id);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(OUTCOMES[result.data]);
+      await load(detail.id);
+    });
   }
 
   function submit() {
     if (!detail || !form) return;
+    if (form.kind === "approve") {
+      const docType = detail.docType === "factura" ? "6" : "1";
+      const filled = customer.number.trim() !== "" || customer.name.trim() !== "";
+      startTransition(async () => {
+        const result = await approveDocument(
+          detail.id,
+          filled ? { docType, number: customer.number, name: customer.name, address: customer.address || null } : null,
+        );
+        if (!result.ok) {
+          toast.error(result.error);
+          return;
+        }
+        toast.success(OUTCOMES[result.data]);
+        setForm(null);
+        await load(detail.id);
+      });
+      return;
+    }
     startTransition(async () => {
       const result =
         form.kind === "void"
@@ -198,10 +249,41 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
               </div>
             </dl>
 
-            {status === "review" && (
+            {status === "review" && !detail.admin && (
               <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
                 En revisión. El administrador lo emitirá.
               </p>
+            )}
+
+            {detail.admin && (status === "review" || status === "failed" || status === "queued" || detail.admin.canReissue) && (
+              <div className="flex flex-col gap-2 rounded-lg bg-card p-4 text-sm shadow-sm">
+                <p className="font-medium uppercase">Administrador</p>
+                {status === "review" && (
+                  <p className="text-amber-800 dark:text-amber-300">
+                    En revisión: {detail.admin.reviewReasons.map((r) => REVIEW_REASON_LABELS[r as ReviewReason]).join(", ")}.
+                    {!detail.admin.canApprove &&
+                      " Se emitirá cuando el contador defina cómo declarar descuentos, regalos, puntos y redondeo."}
+                  </p>
+                )}
+                {detail.admin.lastError && <p className="text-red-700 dark:text-red-400">{detail.admin.lastError}</p>}
+                <div className="flex flex-wrap gap-2">
+                  {detail.admin.canRetry && (
+                    <Button size="sm" onClick={() => adminAction("retry")} disabled={isPending}>
+                      Reintentar ahora
+                    </Button>
+                  )}
+                  {detail.admin.canReissue && (
+                    <Button size="sm" onClick={() => adminAction("reissue")} disabled={isPending}>
+                      Emitir de nuevo (SUNAT lo rechazó)
+                    </Button>
+                  )}
+                  {detail.admin.canApprove && (
+                    <Button size="sm" onClick={() => openForm({ kind: "approve" })} disabled={isPending}>
+                      Corregir cliente y emitir
+                    </Button>
+                  )}
+                </div>
+              </div>
             )}
 
             {detail.hasMotorDocument && (
@@ -308,7 +390,9 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
                 }}
               >
                 <p className="text-sm font-semibold">
-                  {form.kind === "void"
+                  {form.kind === "approve"
+                    ? "Corregir el cliente"
+                    : form.kind === "void"
                     ? "Dar de baja"
                     : form.kind === "credit"
                       ? `Nota de crédito · ${CREDIT_NOTE_REASONS[form.code]}`
@@ -318,6 +402,33 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
                   <p className="text-xs text-muted-foreground">
                     SUNAT recibe la anulación en un lote y la confirma en minutos u horas.
                   </p>
+                )}
+                {form.kind === "approve" && (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="fix-number">{detail.docType === "factura" ? "RUC" : "DNI"}</Label>
+                      <Input
+                        id="fix-number"
+                        inputMode="numeric"
+                        value={customer.number}
+                        onChange={(e) => setCustomer({ ...customer, number: e.target.value.replace(/\D/g, "") })}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="fix-name">{detail.docType === "factura" ? "Razón social" : "Nombre"}</Label>
+                      <Input id="fix-name" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
+                    </div>
+                    {detail.docType === "factura" && (
+                      <div className="flex flex-col gap-1">
+                        <Label htmlFor="fix-address">Dirección</Label>
+                        <Input
+                          id="fix-address"
+                          value={customer.address}
+                          onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
                 {form.kind === "debit" && (
                   <div className="flex flex-col gap-1">
@@ -330,6 +441,7 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
                     />
                   </div>
                 )}
+                {form.kind !== "approve" && (
                 <div className="flex flex-col gap-1">
                   <Label htmlFor="modal-text">
                     {form.kind === "void" ? "Motivo" : form.kind === "credit" ? "Sustento" : "Concepto"}
@@ -343,14 +455,15 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
                     onChange={(e) => setText(e.target.value)}
                   />
                 </div>
+                )}
                 <div className="flex gap-2">
                   <Button
                     type="submit"
                     variant={form.kind === "void" ? "destructive" : "default"}
-                    disabled={isPending || text.trim().length < 3}
+                    disabled={isPending || (form.kind !== "approve" && text.trim().length < 3)}
                   >
                     {isPending && <LoaderCircleIcon className="animate-spin" />}
-                    {form.kind === "void" ? "Confirmar baja" : "Emitir nota"}
+                    {form.kind === "void" ? "Confirmar baja" : form.kind === "approve" ? "Emitir" : "Emitir nota"}
                   </Button>
                   <Button type="button" variant="ghost" onClick={() => setForm(null)}>
                     Cancelar

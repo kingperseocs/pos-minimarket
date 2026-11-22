@@ -128,6 +128,9 @@ export interface SaleDocument {
 export interface SaleDocumentListItem extends SaleDocument {
   saleTotal: number;
   cashierId: number;
+  // A credit note cancels the whole sale (01, 02 or 06, not rejected): for
+  // SUNAT the document no longer counts, like an annulled one.
+  cancelledByNote: boolean;
   soldAt: Date;
   cashierName: string | null;
 }

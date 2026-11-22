@@ -17,6 +17,7 @@ import { db } from "@/infrastructure/db/client";
 import {
   eInvoicingSettings,
   products,
+  saleDocumentNotes,
   saleDocuments,
   saleItems,
   sales,
@@ -54,6 +55,15 @@ export function toSaleDocument(row: Row): SaleDocument {
     createdAt: row.createdAt,
   };
 }
+
+// Whether a credit note cancels the whole sale (01, 02, 06; not rejected).
+const cancelledByNote = sql<boolean>`exists (
+  select 1 from ${saleDocumentNotes}
+  where ${saleDocumentNotes.saleDocumentId} = ${saleDocuments.id}
+    and ${saleDocumentNotes.kind} = 'credit_note'
+    and ${saleDocumentNotes.reasonCode} in ('01', '02', '06')
+    and coalesce(${saleDocumentNotes.motorStatus}, '') <> 'RECHAZADO'
+)`;
 
 // Due: queued or failed (or "sending" whose worker died), its turn has come,
 // below the attempt limit, and automatic emission is on.
@@ -188,6 +198,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
         total: sales.total,
         soldAt: sales.clientCreatedAt,
         cashierId: sales.cashierId,
+        cancelledByNote,
         cashierName: users.name,
       })
       .from(saleDocuments)
@@ -199,6 +210,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
       ...toSaleDocument(r.doc),
       saleTotal: Number(r.total),
       cashierId: r.cashierId,
+      cancelledByNote: r.cancelledByNote,
       soldAt: r.soldAt,
       cashierName: r.cashierName,
     }));
@@ -211,6 +223,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
         total: sales.total,
         soldAt: sales.clientCreatedAt,
         cashierId: sales.cashierId,
+        cancelledByNote,
         cashierName: users.name,
       })
       .from(saleDocuments)
@@ -222,6 +235,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
           ...toSaleDocument(row.doc),
           saleTotal: Number(row.total),
           cashierId: row.cashierId,
+          cancelledByNote: row.cancelledByNote,
           soldAt: row.soldAt,
           cashierName: row.cashierName,
         }

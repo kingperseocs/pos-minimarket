@@ -2,7 +2,7 @@ import { ArrowLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { listSaleDocumentsUseCase } from "@/application/use-cases/e-invoicing/list-sale-documents";
 import { DocumentsDayNav } from "@/components/pos/documents-day-nav";
-import { TodayDocuments } from "@/components/pos/today-documents";
+import { DocumentCardList, toCardRow } from "@/components/e-invoicing/document-card-list";
 import { Button } from "@/components/ui/button";
 import { can } from "@/domain/entities/user";
 import { storeDateKey, storeDayRange } from "@/domain/value-objects/store-time";
@@ -35,22 +35,7 @@ export default async function CashierDocumentsPage({ searchParams }: PageProps<"
           </Button>
         </div>
         <DocumentsDayNav date={date} today={today} />
-        <TodayDocuments
-          live={date === today}
-          documents={documents.map((d) => ({
-            id: d.id,
-            docType: d.docType,
-            number: d.number,
-            status: d.status,
-            motorStatus: d.motorStatus,
-            customerName: d.customerName,
-            customerDocNumber: d.customerDocNumber,
-            total: d.saleTotal,
-            soldAt: d.soldAt.toISOString(),
-            lastError: d.lastError,
-            reviewReasons: d.reviewReasons,
-          }))}
-        />
+        <DocumentCardList live={date === today} documents={documents.map(toCardRow)} />
       </div>
     </div>
   );

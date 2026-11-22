@@ -41,6 +41,7 @@ function doc(over: Partial<SaleDocumentListItem> = {}): SaleDocumentListItem {
     createdAt: new Date(),
     saleTotal: 800,
     cashierId: 2,
+    cancelledByNote: false,
     soldAt: new Date(),
     cashierName: "CAJA 1",
     ...over,

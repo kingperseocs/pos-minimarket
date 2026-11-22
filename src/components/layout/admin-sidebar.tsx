@@ -16,6 +16,7 @@ import {
   WarehouseIcon,
   FileCheck2Icon,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -67,31 +68,32 @@ export function AdminSidebar({ userName }: { userName: string }) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
+      {/* Same height as the page header (h-14), so their bottom lines meet. */}
+      <SidebarHeader className="h-14 justify-center border-b border-sidebar-border py-0">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
               render={<Link href="/admin" />}
-              tooltip="NAVEXPRESS"
+              tooltip="Naveguz · Administración"
+              className="h-11"
             >
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+              {/* The store's logo (the one on its receipts); collapsed, an icon. */}
+              <Image
+                src="/naveguz.png"
+                alt="Naveguz"
+                width={1157}
+                height={314}
+                priority
+                className="h-8 w-auto group-data-[collapsible=icon]:hidden"
+              />
+              <div className="hidden aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground group-data-[collapsible=icon]:flex">
                 <StoreIcon className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate font-heading font-semibold">
-                  NAVEXPRESS
-                </span>
-                <span className="truncate text-xs text-muted-foreground">
-                  Administración
-                </span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-
-      <SidebarSeparator className="mx-0" />
 
       <SidebarContent>
         <SidebarGroup>
