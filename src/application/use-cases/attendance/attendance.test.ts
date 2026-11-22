@@ -15,6 +15,7 @@ import type {
 import { clockInUseCase, clockOutUseCase } from "./clock";
 import { requestCorrectionUseCase, reviewCorrectionUseCase } from "./corrections";
 import type { AttendanceDeps } from "./deps";
+import { expandTemplate } from "@/domain/services/work-shifts";
 
 const lima = (dateKey: string, hhmm: string) => new Date(`${dateKey}T${hhmm}:00-05:00`);
 const MONDAY = "2026-10-05";
@@ -101,7 +102,7 @@ function fakeAttendance() {
   return { records, corrections, repo: repo as AttendanceRepository };
 }
 
-const schedule: WorkSchedule[] = [1, 2, 3, 4, 5, 6].map((weekday) => ({
+const week: WorkSchedule[] = [1, 2, 3, 4, 5, 6].map((weekday) => ({
   userId: juan.id,
   weekday,
   startTime: "07:00",
@@ -109,6 +110,10 @@ const schedule: WorkSchedule[] = [1, 2, 3, 4, 5, 6].map((weekday) => ({
   toleranceMin: 10,
   earlyMin: 5,
 }));
+// Juan's calendar (Monday to Saturday 07:00–15:00) for October 2026.
+const calendar = expandTemplate(week, "2026-09-28", "2026-10-31", () => "#ea580c").map(
+  (s, i) => ({ ...s, id: i + 1, uuid: `shift-${i + 1}` }),
+);
 
 let store: ReturnType<typeof fakeAttendance>;
 let audit: AuditEventInput[];
@@ -124,9 +129,21 @@ beforeEach(() => {
   deps = {
     attendance: store.repo,
     schedules: {
-      listByUser: async () => schedule,
-      listAll: async () => schedule,
+      listByUser: async () => week,
+      listAll: async () => week,
       replaceForUser: async () => {},
+    },
+    workShifts: {
+      listBetween: async (from, to, userId) =>
+        calendar.filter(
+          (s) => s.workDate >= from && s.workDate <= to && (userId === undefined || s.userId === userId),
+        ),
+      findById: async () => null,
+      upsertMany: async () => {},
+      update: async () => {
+        throw new Error("not used");
+      },
+      delete: async () => {},
     },
     audit: {
       record: async (event) => void audit.push(event),

@@ -17,16 +17,16 @@ export interface PersonReport {
   totals: AttendanceTotals;
 }
 
-// Every person, every day of [from, to]: marks against their schedule,
+// Every person, every day of [from, to]: marks against their shifts,
 // absences included. The base of the daily, monthly and range views.
 export async function attendanceReportUseCase(
   deps: AttendanceDeps,
   range: { from: string; to: string; userId?: number },
 ): Promise<PersonReport[]> {
   const now = nowOf(deps);
-  const [people, schedules, records] = await Promise.all([
+  const [people, shifts, records] = await Promise.all([
     deps.attendance.listPeople(),
-    deps.schedules.listAll(),
+    deps.workShifts.listBetween(range.from, range.to, range.userId),
     deps.attendance.listByDates(range.from, range.to, range.userId),
   ]);
   const keys = dateKeysBetween(range.from, range.to);
@@ -35,7 +35,7 @@ export async function attendanceReportUseCase(
     .filter((person) => range.userId === undefined || person.id === range.userId)
     .map((person) => {
       const own = records.filter((r) => r.userId === person.id);
-      const mine = schedules.filter((s) => s.userId === person.id);
+      const mine = shifts.filter((s) => s.userId === person.id);
       // A deactivated person no longer "misses" days.
       const since = person.isActive ? person.since : "9999-12-31";
       const days = keys.map((key) =>

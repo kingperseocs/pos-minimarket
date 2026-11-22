@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { DEFAULT_EARLY_MIN } from "@/domain/entities/attendance";
+import {
+  DEFAULT_EARLY_MIN,
+  DEFAULT_TOLERANCE_MIN,
+  SHIFT_COLORS,
+} from "@/domain/entities/attendance";
+import { MAX_PASTE_DATES } from "@/domain/services/work-shifts";
 import { idSchema, idWithMessage } from "./id";
 
 const blankToNull = (value: unknown) =>
@@ -113,3 +118,71 @@ export const saveScheduleSchema = z.object({
       message: "Hay un día repetido",
     }),
 });
+
+// ---- Calendar (work shifts) ----
+
+const dateKey = (message: string) => z.string().regex(DATE_PATTERN, message);
+
+const toleranceMin = z.coerce
+  .number("Escribe la tolerancia")
+  .int()
+  .min(0, "La tolerancia no puede ser negativa")
+  .max(120, "La tolerancia máxima es 120 minutos")
+  .default(DEFAULT_TOLERANCE_MIN);
+
+const earlyMin = z.coerce
+  .number("Escribe desde cuántos minutos antes se puede marcar")
+  .int()
+  .min(0, "Los minutos antes no pueden ser negativos")
+  .max(120, "Máximo 120 minutos antes")
+  .default(DEFAULT_EARLY_MIN);
+
+// A shift without its date (what is copied and pasted).
+export const shiftPatternSchema = z
+  .object({
+    userId: idWithMessage("Elige al trabajador"),
+    startTime: hhmm("Escribe la hora de entrada"),
+    endTime: hhmm("Escribe la hora de salida"),
+    toleranceMin,
+    earlyMin,
+    color: z.enum(SHIFT_COLORS, "Elige un color"),
+    note: z.preprocess(blankToNull, z.string().trim().max(120).nullable()).default(null),
+  })
+  .refine((s) => s.startTime !== s.endTime, {
+    message: "La entrada y la salida no pueden ser a la misma hora",
+  });
+
+export const createShiftSchema = z.intersection(
+  shiftPatternSchema,
+  z.object({ workDate: dateKey("Elige la fecha") }),
+);
+
+// Edit, move (drag to another day/hour) or resize.
+export const updateShiftSchema = z.intersection(
+  shiftPatternSchema,
+  z.object({ id: idSchema, workDate: dateKey("Elige la fecha") }),
+);
+
+export const shiftRangeSchema = z
+  .object({ from: dateKey("Fecha inicial inválida"), to: dateKey("Fecha final inválida") })
+  .refine((r) => r.from <= r.to, { message: "El rango de fechas está invertido" });
+
+// Copied shift(s) pasted on one or more dates.
+export const pasteShiftsSchema = z.object({
+  items: z.array(shiftPatternSchema).min(1, "No hay nada copiado").max(100),
+  targetDates: z
+    .array(dateKey("Fecha inválida"))
+    .min(1, "Elige al menos un día")
+    .max(MAX_PASTE_DATES, `Máximo ${MAX_PASTE_DATES} días por vez`),
+  overwrite: z.boolean().default(false),
+});
+
+// The weekly template laid on a range of dates.
+export const applyTemplateSchema = z
+  .object({
+    from: dateKey("Elige la fecha inicial"),
+    to: dateKey("Elige la fecha final"),
+    userIds: z.array(idSchema).optional(),
+    overwrite: z.boolean().default(false),
+  })
+  .refine((r) => r.from <= r.to, { message: "El rango de fechas está invertido" });

@@ -69,7 +69,7 @@ function Icon({ icon: IconComponent, tone = "primary" }: { icon: typeof ClockIco
 export function ClockInDone({ clockInAt, onContinue }: { clockInAt: string; onContinue: () => void }) {
   const { state } = useAttendanceContext();
   const at = new Date(clockInAt);
-  const late = computeLateMinutes(at, scheduleFor(storeDateKey(at), state?.schedules ?? []));
+  const late = computeLateMinutes(at, scheduleFor(storeDateKey(at), state?.shifts ?? []));
 
   useEffect(() => {
     const id = setTimeout(onContinue, 2500);
@@ -116,8 +116,8 @@ export function ClockInScreen({ onClockedIn }: { onClockedIn: (clockInAt: string
   const today = storeDateKey(now);
   // Business rule: enabled from a few minutes before the entrance, never on
   // a day off (the admin decides both in the schedule).
-  const clockWindow = clockInWindow(now, state.schedules);
-  const shift = clockWindow.shift ?? scheduleFor(today, state.schedules);
+  const clockWindow = clockInWindow(now, state.shifts);
+  const shift = clockWindow.shift ?? scheduleFor(today, state.shifts);
   const late = clockWindow.allowed ? computeLateMinutes(now, shift) : 0;
   const waitMinutes =
     !clockWindow.allowed && clockWindow.reason === "too_early"
@@ -268,7 +268,7 @@ function ForgottenExitStep() {
   const { state, requestCorrection, skipCorrection } = useAttendanceContext();
   const forgotten = state!.forgotten[0];
   const clockInAt = new Date(forgotten.clockInAt);
-  const shift = scheduleFor(forgotten.workDate, state!.schedules);
+  const shift = scheduleFor(forgotten.workDate, state!.shifts);
   // Suggested: the end of that day's shift, or 8 hours after entering.
   const suggested = shift?.end ?? new Date(clockInAt.getTime() + 8 * 60 * 60 * 1000);
   const [minutes, setMinutes] = useState(() => {

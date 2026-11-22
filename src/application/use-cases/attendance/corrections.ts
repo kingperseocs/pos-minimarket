@@ -223,7 +223,10 @@ export async function addAttendanceUseCase(
     throw new ValidationError("La hora no puede ser en el futuro");
   }
 
-  const shift = scheduleFor(data.workDate, await deps.schedules.listByUser(data.userId));
+  const shift = scheduleFor(
+    data.workDate,
+    await deps.workShifts.listBetween(data.workDate, data.workDate, data.userId),
+  );
   const uuid = crypto.randomUUID();
   await deps.attendance.insert({
     uuid,

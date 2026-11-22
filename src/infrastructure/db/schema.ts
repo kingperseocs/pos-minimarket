@@ -707,6 +707,40 @@ export const workSchedules = pgTable(
   ],
 );
 
+// The staff calendar: one shift of a person on one date. Source of truth for
+// clock-in, lateness and absences (work_schedules is only a template to fill
+// it). An end before the start means the shift ends the next day.
+export const workShifts = pgTable(
+  "work_shifts",
+  {
+    id: integer("id_work_shift").primaryKey().generatedByDefaultAsIdentity(),
+    uuid: uuid("uuid").notNull().unique().defaultRandom(),
+    userId: integer("id_user")
+      .notNull()
+      .references(() => users.id),
+    workDate: date("work_date", { mode: "string" }).notNull(),
+    startTime: time("start_time").notNull(),
+    endTime: time("end_time").notNull(),
+    toleranceMin: integer("tolerance_min").notNull().default(10),
+    earlyMin: integer("early_min").notNull().default(5),
+    // Hex color from the calendar palette.
+    color: text("color").notNull().default("#ea580c"),
+    note: text("note"),
+    createdBy: integer("id_created_by").references(() => users.id),
+    updatedBy: integer("id_updated_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("work_shifts_user_date_idx").on(table.userId, table.workDate),
+    index("work_shifts_date_idx").on(table.workDate),
+  ],
+);
+
 // One workday of a staff member, from "Marcar entrada" to "Marcar salida".
 // Created on the device (uuid) so it works without internet. The effective
 // times (clock_in_at / clock_out_at) are what reports use; the device and

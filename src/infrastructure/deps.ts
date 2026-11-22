@@ -19,6 +19,7 @@ import {
   userRepository,
   workerRepository,
   workScheduleRepository,
+  workShiftRepository,
 } from "./repositories";
 
 // Composition root for the use cases that need several adapters.
@@ -51,6 +52,7 @@ export const rucLookupDeps = {
 export const attendanceDeps: AttendanceDeps = {
   attendance: attendanceRepository,
   schedules: workScheduleRepository,
+  workShifts: workShiftRepository,
   audit: auditRepository,
   shifts: cashShiftRepository,
 };

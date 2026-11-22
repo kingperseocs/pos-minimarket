@@ -127,6 +127,11 @@ export type AuditEventType =
   | "attendance_correction_approved"
   | "attendance_correction_rejected"
   | "work_schedule_changed"
+  | "work_shift_created"
+  | "work_shift_updated"
+  | "work_shift_deleted"
+  | "work_shifts_pasted"
+  | "work_shift_template_applied"
   | "shift_opened_off_schedule"
   | "clock_out_with_open_till"
   | "receipt_paid"
@@ -161,7 +166,12 @@ export const AUDIT_EVENT_LABELS: Record<AuditEventType, string> = {
   attendance_correction_requested: "Pidió corregir su marca",
   attendance_correction_approved: "Corrección de marca aprobada",
   attendance_correction_rejected: "Corrección de marca rechazada",
-  work_schedule_changed: "Horario modificado",
+  work_schedule_changed: "Plantilla semanal modificada",
+  work_shift_created: "Turno creado en el calendario",
+  work_shift_updated: "Turno del calendario modificado",
+  work_shift_deleted: "Turno del calendario eliminado",
+  work_shifts_pasted: "Turnos pegados en el calendario",
+  work_shift_template_applied: "Plantilla semanal aplicada al calendario",
   shift_opened_off_schedule: "Abrió caja fuera de su horario",
   clock_out_with_open_till: "Marcó salida con la caja abierta",
   receipt_paid: "Factura de proveedor pagada",
@@ -180,6 +190,11 @@ export const ATTENDANCE_AUDIT_EVENTS: AuditEventType[] = [
   "attendance_correction_approved",
   "attendance_correction_rejected",
   "work_schedule_changed",
+  "work_shift_created",
+  "work_shift_updated",
+  "work_shift_deleted",
+  "work_shifts_pasted",
+  "work_shift_template_applied",
   "shift_opened_off_schedule",
   "clock_out_with_open_till",
 ];

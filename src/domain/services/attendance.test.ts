@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { WorkSchedule } from "../entities/attendance";
+import { expandTemplate } from "./work-shifts";
 import { storeDateKey } from "../value-objects/store-time";
 import {
   buildPersonDay,
@@ -23,8 +24,9 @@ import {
 // Lima is UTC-5: 07:00 in the store is 12:00Z.
 const lima = (dateKey: string, hhmm: string) => new Date(`${dateKey}T${hhmm}:00-05:00`);
 
-// Juan: Monday to Saturday 07:00–15:00, 10 minutes of tolerance.
-const juan: WorkSchedule[] = [1, 2, 3, 4, 5, 6].map((weekday) => ({
+// Juan: Monday to Saturday 07:00–15:00, 10 minutes of tolerance, laid on
+// the calendar for September–October 2026.
+const juanWeek: WorkSchedule[] = [1, 2, 3, 4, 5, 6].map((weekday) => ({
   userId: 1,
   weekday,
   startTime: "07:00",
@@ -32,6 +34,7 @@ const juan: WorkSchedule[] = [1, 2, 3, 4, 5, 6].map((weekday) => ({
   toleranceMin: 10,
   earlyMin: 5,
 }));
+const juan = expandTemplate(juanWeek, "2026-09-01", "2026-10-31", () => "#ea580c");
 
 // 2026-10-05 is a Monday, 2026-10-04 a Sunday.
 const MONDAY = "2026-10-05";
@@ -62,7 +65,7 @@ describe("scheduleFor", () => {
 
   it("a night shift ends the next day", () => {
     const night = scheduleFor(MONDAY, [
-      { weekday: 1, startTime: "22:00", endTime: "06:00", toleranceMin: 5 },
+      { workDate: MONDAY, startTime: "22:00", endTime: "06:00", toleranceMin: 5 },
     ])!;
     assert.equal(night.end.toISOString(), "2026-10-06T11:00:00.000Z");
   });
@@ -114,7 +117,7 @@ describe("clockInWindow", () => {
   });
 
   it("a shift starting at midnight can be marked the evening before", () => {
-    const night = [{ weekday: 1, startTime: "00:00", endTime: "08:00", toleranceMin: 10, earlyMin: 5 }];
+    const night = [{ workDate: MONDAY, startTime: "00:00", endTime: "08:00", toleranceMin: 10, earlyMin: 5 }];
     const window = clockInWindow(lima(SUNDAY, "23:57"), night);
     assert.equal(window.allowed, true);
     assert.equal(window.allowed && storeDateKey(window.shift.start), MONDAY);

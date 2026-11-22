@@ -253,6 +253,13 @@
       "when": 1794974384055,
       "tag": "0035_activate_pending_workers",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795013403471,
+      "tag": "0036_work_shifts",
+      "breakpoints": true
     }
   ]
 }

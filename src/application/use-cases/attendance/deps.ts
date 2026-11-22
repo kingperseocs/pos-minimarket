@@ -2,12 +2,17 @@ import type { AttendanceRepository } from "@/domain/repositories/attendance-repo
 import type { AuditRepository } from "@/domain/repositories/audit-repository";
 import type { CashShiftRepository } from "@/domain/repositories/cash-shift-repository";
 import type { WorkScheduleRepository } from "@/domain/repositories/work-schedule-repository";
+import type { WorkShiftRepository } from "@/domain/repositories/work-shift-repository";
 import type { ScheduledShift } from "@/domain/services/attendance";
 
 export interface AttendanceDeps {
   attendance: AttendanceRepository;
+  // Weekly template (only to fill the calendar).
   schedules: WorkScheduleRepository;
+  // The calendar: source of truth of who works when.
+  workShifts: WorkShiftRepository;
   audit: Pick<AuditRepository, "record" | "recordWithUuid">;
+  // Cash drawer shifts (not work shifts).
   shifts: Pick<CashShiftRepository, "hasOpenShift">;
   // Server clock (injectable for tests).
   now?: () => Date;

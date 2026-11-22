@@ -24,14 +24,18 @@ function emptyState(userId: number): LocalAttendance {
     forgotten: [],
     lastClosed: null,
     answered: [],
-    schedules: [],
+    shifts: [],
     serverTime: null,
   };
 }
 
 export async function getLocalAttendance(userId: number) {
   const db = await getOfflineDb();
-  return (await db.get("attendance", userId)) ?? emptyState(userId);
+  const stored = await db.get("attendance", userId);
+  if (!stored) return emptyState(userId);
+  // Saved before the calendar (weekly schedules): no shifts until the next
+  // sync brings them.
+  return { ...stored, shifts: stored.shifts ?? [] };
 }
 
 async function saveLocal(state: LocalAttendance) {
@@ -129,7 +133,7 @@ export async function clockIn(userId: number) {
   const state = await getLocalAttendance(userId);
   const now = new Date();
   // Same window as the server, with the schedule cached on the device.
-  const clockWindow = clockInWindow(now, state.schedules);
+  const clockWindow = clockInWindow(now, state.shifts);
   if (!clockWindow.allowed) throw new Error(clockInBlockedMessage(clockWindow));
   const current = {
     uuid: crypto.randomUUID(),
@@ -214,7 +218,7 @@ export async function mergeServerState(userId: number, server: AttendanceTodaySt
     return state;
   }
   if (await hasPendingOps(userId)) {
-    const next = { ...state, schedules: server.schedules };
+    const next = { ...state, shifts: server.shifts ?? [] };
     await saveLocal(next);
     return next;
   }
@@ -230,7 +234,8 @@ export async function mergeServerState(userId: number, server: AttendanceTodaySt
 
   const next: LocalAttendance = {
     ...state,
-    schedules: server.schedules,
+    // A page cached before the calendar may still send no shifts.
+    shifts: server.shifts ?? [],
     current: inProgress ?? null,
     forgotten,
     lastClosed: closed

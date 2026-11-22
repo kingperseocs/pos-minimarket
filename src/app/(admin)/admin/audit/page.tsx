@@ -62,6 +62,8 @@ const EVENT_TONES: Partial<Record<AuditEventType, string>> = {
   attendance_correction_requested: "text-amber-700 dark:text-amber-400",
   attendance_correction_rejected: "text-muted-foreground",
   work_schedule_changed: "text-amber-700 dark:text-amber-400",
+  work_shift_updated: "text-amber-700 dark:text-amber-400",
+  work_shift_deleted: "text-amber-700 dark:text-amber-400",
   shift_opened_off_schedule: "text-amber-700 dark:text-amber-400",
   clock_out_with_open_till: "text-destructive",
   attendance_clock_in_blocked: "text-destructive",

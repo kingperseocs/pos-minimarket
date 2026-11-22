@@ -3,7 +3,7 @@ import {
   OFF_SCHEDULE_MARGIN_MIN,
   SUSPICIOUS_CLOCK_MS,
   type AttendanceStatus,
-  type WorkSchedule,
+  type WorkShift,
 } from "../entities/attendance";
 import { STORE_TIME_ZONE, STORE_UTC_OFFSET, storeDateKey } from "../value-objects/store-time";
 
@@ -76,8 +76,9 @@ export interface ScheduledShift {
   earlyMin: number;
 }
 
-type ScheduleDay = Pick<WorkSchedule, "weekday" | "startTime" | "endTime" | "toleranceMin"> &
-  Partial<Pick<WorkSchedule, "earlyMin">>;
+// A dated shift from the calendar (only what the rules need).
+export type ShiftDay = Pick<WorkShift, "workDate" | "startTime" | "endTime" | "toleranceMin"> &
+  Partial<Pick<WorkShift, "earlyMin">>;
 
 // "HH:MM" of the instant in the store's zone.
 function storeTimeOfDay(date: Date) {
@@ -93,12 +94,13 @@ function atStoreTime(dateKey: string, hhmm: string) {
   return new Date(`${dateKey}T${hhmm.slice(0, 5)}:00.000${STORE_UTC_OFFSET}`);
 }
 
-// The person's shift on that date, or null if it's their day off.
+// The person's shift on that date (from the calendar), or null if it's their
+// day off.
 export function scheduleFor(
   dateKey: string,
-  schedules: ScheduleDay[],
+  shifts: ShiftDay[],
 ): ScheduledShift | null {
-  const day = schedules.find((s) => s.weekday === weekdayOf(dateKey));
+  const day = shifts.find((s) => s.workDate === dateKey);
   if (!day) return null;
   const start = atStoreTime(dateKey, day.startTime);
   let end = atStoreTime(dateKey, day.endTime);
@@ -125,11 +127,11 @@ export type ClockInWindow =
 // be marked from the evening before, so tomorrow's shift is considered too.
 export function clockInWindow(
   now: Date,
-  schedules: ScheduleDay[],
+  shifts: ShiftDay[],
 ): ClockInWindow {
   const today = storeDateKey(now);
-  const shift = scheduleFor(today, schedules);
-  const tomorrow = scheduleFor(addDays(today, 1), schedules);
+  const shift = scheduleFor(today, shifts);
+  const tomorrow = scheduleFor(addDays(today, 1), shifts);
   const opens = (s: ScheduledShift) => new Date(s.start.getTime() - s.earlyMin * MINUTE);
 
   if (tomorrow && now >= opens(tomorrow)) return { allowed: true, shift: tomorrow };
@@ -277,13 +279,13 @@ function isForgotten(record: DayRecordInput, now: Date) {
 // One person on one date: their records that day against their schedule.
 export function buildPersonDay<R extends DayRecordInput>(
   dateKey: string,
-  schedules: WorkSchedule[],
+  shifts: ShiftDay[],
   records: R[],
   now: Date,
   since: string,
 ): PersonDay<R> {
   const today = storeDateKey(now);
-  const shift = scheduleFor(dateKey, schedules);
+  const shift = scheduleFor(dateKey, shifts);
   const sorted = [...records].sort((a, b) => a.clockInAt.getTime() - b.clockInAt.getTime());
   const closed = sorted.filter((r) => r.clockOutAt !== null);
   const open = sorted.filter((r) => r.clockOutAt === null);

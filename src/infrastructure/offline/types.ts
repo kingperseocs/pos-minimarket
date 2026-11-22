@@ -1,4 +1,4 @@
-import type { WorkSchedule } from "@/domain/entities/attendance";
+import type { WorkShift } from "@/domain/entities/attendance";
 import type { PaymentType } from "@/domain/entities/sale";
 import type { CaptureSource } from "@/domain/value-objects/capture-source";
 import type { WorkerDiscountUsage, WorkerStatus, WorkerVerification } from "@/domain/entities/worker";
@@ -134,7 +134,8 @@ export type LocalAttendance = {
   lastClosed: { workDate: string; clockInAt: string; clockOutAt: string } | null;
   // Forgotten workdays already answered or skipped (not asked again).
   answered: string[];
-  schedules: WorkSchedule[];
+  // The person's calendar shifts around today (cached for offline clock-in).
+  shifts: WorkShift[];
   // Server time of the last state merged from the server: older snapshots
   // (e.g. a page cached by the service worker) never overwrite newer ones.
   serverTime: string | null;

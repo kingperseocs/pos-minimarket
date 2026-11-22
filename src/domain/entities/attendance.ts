@@ -37,7 +37,9 @@ export const DEFAULT_TOLERANCE_MIN = 10;
 // worked count from the scheduled start, not from an earlier mark.
 export const DEFAULT_EARLY_MIN = 5;
 
-// One working weekday of a person's weekly schedule (0 = Sunday).
+// One working weekday of a person's weekly template (0 = Sunday). Only used
+// to fill the calendar (work_shifts) in bulk: clock-in, lateness and
+// absences read the dated shifts.
 export interface WorkSchedule {
   userId: number;
   weekday: number;
@@ -48,6 +50,54 @@ export interface WorkSchedule {
   // Minutes before startTime that "Marcar entrada" is enabled.
   earlyMin: number;
 }
+
+// Business rule: the calendar is the source of truth of who works when. A
+// person has at most one shift per date (one workday per date).
+export interface WorkShift {
+  id: number;
+  uuid: string;
+  userId: number;
+  // "YYYY-MM-DD", store date the shift starts on.
+  workDate: string;
+  // "HH:MM", store time. An end before the start ends the next day.
+  startTime: string;
+  endTime: string;
+  toleranceMin: number;
+  earlyMin: number;
+  color: ShiftColor;
+  note: string | null;
+}
+
+// What a shift is without its identity (copied, pasted, from the template).
+export type ShiftPattern = Pick<
+  WorkShift,
+  "userId" | "startTime" | "endTime" | "toleranceMin" | "earlyMin" | "color" | "note"
+>;
+
+// Fixed palette (the calendar colors a shift with one of these).
+export const SHIFT_COLORS = [
+  "#15803d",
+  "#facc15",
+  "#ea580c",
+  "#c084fc",
+  "#1d4ed8",
+  "#2dd4bf",
+  "#7e22ce",
+  "#fda4af",
+  "#a3a32a",
+  "#0ea5e9",
+] as const;
+export type ShiftColor = (typeof SHIFT_COLORS)[number];
+
+export const DEFAULT_SHIFT_COLOR: Record<"cashier" | "warehouse", ShiftColor> = {
+  cashier: "#ea580c",
+  warehouse: "#1d4ed8",
+};
+
+// Shifts the device keeps for offline clock-in: a forgotten workday from
+// last week and the next two weeks.
+export const DEVICE_SHIFT_DAYS_BEFORE = 7;
+export const DEVICE_SHIFT_DAYS_AFTER = 14;
 
 export interface AttendanceRecord {
   id: number;
@@ -111,7 +161,8 @@ export interface AttendancePerson {
 // What the device needs to show the clock-in screen without internet.
 export interface AttendanceTodayState {
   serverTime: string;
-  schedules: WorkSchedule[];
+  // The person's shifts around today (see DEVICE_SHIFT_DAYS_*).
+  shifts: WorkShift[];
   // The person's workdays still open (today's, or a forgotten one).
   open: { uuid: string; workDate: string; clockInAt: string }[];
   // Today's workdays already closed (to tell "you already left").

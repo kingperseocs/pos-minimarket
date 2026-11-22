@@ -1,4 +1,6 @@
 import {
+  DEVICE_SHIFT_DAYS_AFTER,
+  DEVICE_SHIFT_DAYS_BEFORE,
   requiresAttendance,
   type AttendanceTodayState,
 } from "@/domain/entities/attendance";
@@ -16,6 +18,7 @@ import {
 import { storeDateKey } from "@/domain/value-objects/store-time";
 import { clockInSchema, clockOutSchema } from "@/application/validation/attendance";
 import { nowOf, snapshotShift, type AttendanceDeps } from "./deps";
+import { shiftsAround } from "./work-shifts";
 
 type Actor = { id: number; role: UserRole };
 
@@ -39,15 +42,16 @@ export async function clockInUseCase(deps: AttendanceDeps, input: unknown, actor
     live: data.live,
     clockMovedBack: data.clockMovedBack,
   });
-  const schedules = await deps.schedules.listByUser(actor.id);
   let workDate = storeDateKey(time.at);
-  let shift = scheduleFor(workDate, schedules);
+  // The calendar decides (today's shift, or tomorrow's marked early).
+  const shifts = await shiftsAround(deps, actor.id, workDate, 1, 1);
+  let shift = scheduleFor(workDate, shifts);
   let outsideWindow: Exclude<ReturnType<typeof clockInWindow>, { allowed: true }> | null = null;
 
   // Clock-in window (the admin's schedule decides). The admin is never
   // blocked.
   if (requiresAttendance(actor.role)) {
-    const clockWindow = clockInWindow(time.at, schedules);
+    const clockWindow = clockInWindow(time.at, shifts);
     if (clockWindow.allowed) {
       shift = clockWindow.shift;
       // A shift starting after midnight, marked the evening before.
@@ -187,14 +191,14 @@ export async function attendanceTodayUseCase(
 ): Promise<AttendanceTodayState> {
   const now = nowOf(deps);
   const today = storeDateKey(now);
-  const [schedules, open, todays] = await Promise.all([
-    deps.schedules.listByUser(userId),
+  const [shifts, open, todays] = await Promise.all([
+    shiftsAround(deps, userId, today, DEVICE_SHIFT_DAYS_BEFORE, DEVICE_SHIFT_DAYS_AFTER),
     deps.attendance.listOpen(userId),
     deps.attendance.listByDates(today, today, userId),
   ]);
   return {
     serverTime: now.toISOString(),
-    schedules,
+    shifts,
     open: open.map((r) => ({
       uuid: r.uuid,
       workDate: r.workDate,
@@ -221,7 +225,8 @@ export async function auditShiftOpeningUseCase(
   if (!requiresAttendance(actor.role)) return;
   const openedAt = new Date(data.openedAt);
   if (Number.isNaN(openedAt.getTime())) return;
-  const shift = scheduleFor(storeDateKey(openedAt), await deps.schedules.listByUser(actor.id));
+  const openedOn = storeDateKey(openedAt);
+  const shift = scheduleFor(openedOn, await shiftsAround(deps, actor.id, openedOn, 0, 0));
   if (!isOffSchedule(openedAt, shift)) return;
   // Keyed by the shift's uuid: a retried opening doesn't audit twice.
   await deps.audit.recordWithUuid(data.uuid, {
