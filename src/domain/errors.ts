@@ -116,3 +116,26 @@ export class ClockInNotAllowedError extends ValidationError {
     this.name = "ClockInNotAllowedError";
   }
 }
+
+// The billing engine ("motor") could not be reached or did not answer in
+// time (network, timeout, 5xx). The document stays queued and is retried.
+export class MotorUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MotorUnavailableError";
+  }
+}
+
+// The motor answered and refused the request (4xx). Retrying the same
+// request will not help: someone has to fix the data or the configuration.
+export class MotorRejectedError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly details: { field?: string; message: string }[] = [],
+  ) {
+    super(message);
+    this.name = "MotorRejectedError";
+  }
+}
