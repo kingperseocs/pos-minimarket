@@ -11,6 +11,8 @@ if (!process.env.DATABASE_URL) {
 // llegaba como "f"; probado el 2026-11-21), así que no se usa. prepare: false
 // mantiene compatibilidad con cualquier pooler. En Vercel cada función abre su
 // propio pool, así que se mantienen pocas conexiones (DB_POOL_MAX, 5 por defecto).
+// En Vercel Production DB_POOL_MAX=1: el session pooler del plan gratis admite
+// 15 clientes en total, y con 5 por copia se agotaba (EMAXCONNSESSION, 2026-11-22).
 function createClient() {
   return postgres(process.env.DATABASE_URL!, {
     prepare: false,
