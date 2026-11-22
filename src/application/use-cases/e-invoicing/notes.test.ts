@@ -22,7 +22,7 @@ function doc(over: Partial<SaleDocumentListItem> = {}): SaleDocumentListItem {
     status: "issued", reviewReasons: [], motorId: "m-1", number: "B001-8", motorStatus: "ACEPTADO",
     sunatCode: 0, sunatDescription: "ok", idempotencyKey: UUID, attempts: 1, lastError: null,
     nextAttemptAt: NOW, issuedAt: new Date("2026-11-21T15:00:00.000Z"), createdAt: NOW,
-    saleTotal: 14, cashierId: 2, cancelledByNote: false, soldAt: NOW, cashierName: "CAJA 1",
+    saleTotal: 14, cashierId: 2, cancelledByNote: false, voidSent: false, soldAt: NOW, cashierName: "CAJA 1",
     ...over,
   };
 }

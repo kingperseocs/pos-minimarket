@@ -131,6 +131,8 @@ export interface SaleDocumentListItem extends SaleDocument {
   // A credit note cancels the whole sale (01, 02 or 06, not rejected): for
   // SUNAT the document no longer counts, like an annulled one.
   cancelledByNote: boolean;
+  // An annulment (baja / resumen diario) was sent and is not rejected.
+  voidSent: boolean;
   soldAt: Date;
   cashierName: string | null;
 }

@@ -1,5 +1,17 @@
 import type { ReviewReason, SaleDocumentStatus, SaleDocumentType } from "@/domain/entities/sale-document";
 
+// One pastel colour per state, so the day can be read at a glance.
+export type CardTone = "ok" | "cancelled" | "voiding" | "review" | "pending" | "error";
+
+export const CARD_TONE_LABELS: Record<CardTone, string | null> = {
+  ok: null,
+  cancelled: "Anulado",
+  voiding: "Baja en proceso",
+  review: "En revisión",
+  pending: "Por emitir",
+  error: "Con error",
+};
+
 // What a document card shows. Plain data and a plain function (no
 // "use client"): server pages build the rows, the client list renders them.
 export interface DocumentCardRow {
@@ -17,6 +29,8 @@ export interface DocumentCardRow {
   cashierName: string | null;
   // Annulled, or cancelled by a credit note: it no longer counts for SUNAT.
   cancelled: boolean;
+  // The card's pastel colour and label, from its state.
+  tone: CardTone;
 }
 
 // Server rows → card rows (the same for the till and the admin).
@@ -34,7 +48,20 @@ export function toCardRow(d: {
   reviewReasons: ReviewReason[];
   cashierName: string | null;
   cancelledByNote: boolean;
+  voidSent: boolean;
 }): DocumentCardRow {
+  const cancelled = d.status === "voided" || d.motorStatus === "ANULADO" || d.cancelledByNote;
+  const tone: CardTone = cancelled
+    ? "cancelled"
+    : d.voidSent
+      ? "voiding"
+      : d.status === "review"
+        ? "review"
+        : d.status === "failed" || d.motorStatus === "RECHAZADO"
+          ? "error"
+          : d.status === "queued" || d.status === "sending" || (d.status === "issued" && d.motorStatus === "PENDIENTE")
+            ? "pending"
+            : "ok";
   return {
     id: d.id,
     docType: d.docType,
@@ -48,6 +75,7 @@ export function toCardRow(d: {
     lastError: d.lastError,
     reviewReasons: d.reviewReasons,
     cashierName: d.cashierName,
-    cancelled: d.status === "voided" || d.motorStatus === "ANULADO" || d.cancelledByNote,
+    cancelled,
+    tone,
   };
 }

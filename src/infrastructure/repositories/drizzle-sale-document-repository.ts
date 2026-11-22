@@ -65,6 +65,14 @@ const cancelledByNote = sql<boolean>`exists (
     and coalesce(${saleDocumentNotes.motorStatus}, '') <> 'RECHAZADO'
 )`;
 
+// Whether an annulment was sent for it (and not rejected).
+const voidSent = sql<boolean>`exists (
+  select 1 from ${saleDocumentNotes}
+  where ${saleDocumentNotes.saleDocumentId} = ${saleDocuments.id}
+    and ${saleDocumentNotes.kind} = 'void'
+    and coalesce(${saleDocumentNotes.motorStatus}, '') <> 'RECHAZADO'
+)`;
+
 // Due: queued or failed (or "sending" whose worker died), its turn has come,
 // below the attempt limit, and automatic emission is on.
 function due(maxAttempts: number) {
@@ -199,6 +207,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
         soldAt: sales.clientCreatedAt,
         cashierId: sales.cashierId,
         cancelledByNote,
+        voidSent,
         cashierName: users.name,
       })
       .from(saleDocuments)
@@ -211,6 +220,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
       saleTotal: Number(r.total),
       cashierId: r.cashierId,
       cancelledByNote: r.cancelledByNote,
+      voidSent: r.voidSent,
       soldAt: r.soldAt,
       cashierName: r.cashierName,
     }));
@@ -224,6 +234,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
         soldAt: sales.clientCreatedAt,
         cashierId: sales.cashierId,
         cancelledByNote,
+        voidSent,
         cashierName: users.name,
       })
       .from(saleDocuments)
@@ -236,6 +247,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
           saleTotal: Number(row.total),
           cashierId: row.cashierId,
           cancelledByNote: row.cancelledByNote,
+          voidSent: row.voidSent,
           soldAt: row.soldAt,
           cashierName: row.cashierName,
         }

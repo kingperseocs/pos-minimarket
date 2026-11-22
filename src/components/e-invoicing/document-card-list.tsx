@@ -4,11 +4,20 @@ import { ChevronLeftIcon, ChevronRightIcon, ClockIcon, LoaderCircleIcon, SendIco
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { DocumentStatusBadge } from "@/components/e-invoicing/document-status-badge";
 import { LiveRefresh } from "@/components/e-invoicing/live-refresh";
 import { Button } from "@/components/ui/button";
 import { reviewText } from "./review-text";
-import type { DocumentCardRow } from "./card-row";
+import { CARD_TONE_LABELS, type CardTone, type DocumentCardRow } from "./card-row";
+
+// Pastel background, text and amount colour of each state.
+const TONES: Record<CardTone, { card: string; amount: string }> = {
+  ok: { card: "bg-card", amount: "text-emerald-600 dark:text-emerald-400" },
+  cancelled: { card: "bg-red-200/70 text-red-950 dark:bg-red-900/40 dark:text-red-100", amount: "text-red-800/80" },
+  voiding: { card: "bg-orange-100 text-orange-950 dark:bg-orange-900/30 dark:text-orange-100", amount: "text-orange-700" },
+  review: { card: "bg-yellow-100 text-yellow-950 dark:bg-yellow-900/30 dark:text-yellow-100", amount: "text-yellow-800" },
+  pending: { card: "bg-sky-100 text-sky-950 dark:bg-sky-900/30 dark:text-sky-100", amount: "text-sky-700" },
+  error: { card: "bg-rose-100 text-rose-950 dark:bg-rose-900/30 dark:text-rose-100", amount: "text-rose-700" },
+};
 import { STORE_TIME_ZONE } from "@/domain/value-objects/store-time";
 import { DocumentModal, FULL_TYPE_LABELS } from "./document-modal";
 
@@ -26,12 +35,10 @@ function when(iso: string) {
 }
 
 // S/ 350.⁰⁰ — the cents raised, as on KeyFacil.
-function Amount({ value, cancelled }: { value: number; cancelled: boolean }) {
+function Amount({ value, tone }: { value: number; tone: CardTone }) {
   const [soles, cents] = value.toFixed(2).split(".");
   return (
-    <span
-      className={`whitespace-nowrap font-bold ${cancelled ? "text-amber-800/80" : "text-emerald-600 dark:text-emerald-400"}`}
-    >
+    <span className={`whitespace-nowrap font-bold ${TONES[tone].amount}`}>
       <span className="text-sm">S/ </span>
       <span className="text-2xl tabular-nums">{Number(soles).toLocaleString("es-PE")}</span>
       <sup className="text-xs">.{cents}</sup>
@@ -101,22 +108,22 @@ export function DocumentCardList({
               <button
                 type="button"
                 onClick={() => setOpenId(d.id)}
-                className={`flex w-full cursor-pointer items-center gap-4 rounded-lg px-6 py-4 text-left shadow-md transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none active:translate-y-0 ${
-                  d.cancelled ? "bg-red-200/70 text-red-950 dark:bg-red-900/40 dark:text-red-100" : "bg-card"
-                }`}
+                className={`flex w-full cursor-pointer items-center gap-4 rounded-lg px-6 py-4 text-left shadow-md transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none active:translate-y-0 ${TONES[d.tone].card}`}
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold">
                     {FULL_TYPE_LABELS[d.docType]} » {d.number ?? "por emitir"}
-                    {d.cancelled && <span className="ml-2 text-xs font-medium uppercase">· Anulado</span>}
+                    {CARD_TONE_LABELS[d.tone] && (
+                      <span className="ml-2 text-xs font-semibold uppercase">· {CARD_TONE_LABELS[d.tone]}</span>
+                    )}
                   </p>
                   <p
-                    className={`mt-1 flex items-center gap-1.5 truncate text-sm uppercase ${d.cancelled ? "opacity-80" : "text-muted-foreground"}`}
+                    className={`mt-1 flex items-center gap-1.5 truncate text-sm uppercase ${d.tone === "ok" ? "text-muted-foreground" : "opacity-80"}`}
                   >
                     <UserRoundIcon className="size-3.5 shrink-0" aria-hidden />
                     {d.customerName ? `${d.customerName} (${d.customerDocNumber})` : "Clientes varios"}
                   </p>
-                  <p className={`mt-0.5 flex items-center gap-1.5 text-sm ${d.cancelled ? "opacity-80" : "text-muted-foreground"}`}>
+                  <p className={`mt-0.5 flex items-center gap-1.5 text-sm ${d.tone === "ok" ? "text-muted-foreground" : "opacity-80"}`}>
                     <ClockIcon className="size-3.5 shrink-0" aria-hidden />
                     {when(d.soldAt)}
                     {showCashier && d.cashierName && <span className="uppercase">· {d.cashierName}</span>}
@@ -129,10 +136,7 @@ export function DocumentCardList({
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <Amount value={d.total} cancelled={d.cancelled} />
-                  {!d.cancelled && !(d.status === "issued" && d.motorStatus === "ACEPTADO") && (
-                    <DocumentStatusBadge status={d.status} motorStatus={d.motorStatus} />
-                  )}
+                  <Amount value={d.total} tone={d.tone} />
                 </div>
               </button>
             </li>
