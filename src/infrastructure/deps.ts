@@ -12,6 +12,7 @@ import {
   discountPolicyRepository,
   productRepository,
   promoDiscountRepository,
+  saleDocumentRepository,
   saleRepository,
   salesAnalyticsRepository,
   salesGoalRepository,
@@ -21,6 +22,8 @@ import {
   workScheduleRepository,
   workShiftRepository,
 } from "./repositories";
+
+import { eInvoicingGateway } from "./e-invoicing";
 
 // Composition root for the use cases that need several adapters.
 export const saleDeps = {
@@ -64,3 +67,9 @@ export const goalDeps = {
 };
 
 export { DNI_LOOKUP_TIMEOUT_MS, RUC_LOOKUP_TIMEOUT_MS };
+
+// Electronic invoicing: the outbox in the POS database and the motor.
+export const eInvoicingDeps = {
+  documents: saleDocumentRepository,
+  gateway: eInvoicingGateway,
+};

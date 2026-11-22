@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { issueSaleDocument } from "@/application/use-cases/e-invoicing/issue-sale-document";
 import { createSaleUseCase } from "@/application/use-cases/sales/create-sale";
 import {
   CashierNotFoundError,
@@ -7,7 +8,11 @@ import {
   UnauthorizedError,
 } from "@/domain/errors";
 import { userWithPermission } from "@/infrastructure/auth/guards";
-import { saleDeps } from "@/infrastructure/deps";
+import { eInvoicingDeps, saleDeps } from "@/infrastructure/deps";
+
+// Room for the electronic document sent right after the response (the motor
+// waits for SUNAT). If it does not finish, the outbox retries it.
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const user = await userWithPermission("sell");
@@ -28,6 +33,17 @@ export async function POST(request: Request) {
       body,
       user.id,
     );
+    if (result.inserted) {
+      // Issue the sale's document without making the till wait. Not durable
+      // on its own: drainOutbox (called by every till after syncing) retries.
+      after(async () => {
+        try {
+          await issueSaleDocument(eInvoicingDeps, result.uuid);
+        } catch (error) {
+          console.error("Electronic document issue failed", error);
+        }
+      });
+    }
     return NextResponse.json({ synced: true, ...result });
   } catch (error) {
     // 401/403 are not the sale's fault: the client keeps it queued and

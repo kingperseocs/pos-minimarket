@@ -125,9 +125,22 @@ export async function runSync() {
     // Keep the offline worker list and discount usage fresh: forced after
     // anything synced (usage changed), throttled otherwise.
     await refreshWorkerSnapshot({ force: salesSynced + workerOpsSynced > 0 });
+
+    // Electronic documents whose turn has come (motor was down, a retry is
+    // due, an after() that did not finish). Fire and forget: it can take a
+    // while and must not hold up the next sync.
+    void drainElectronicDocuments();
   } finally {
     syncing = false;
     notify();
+  }
+}
+
+async function drainElectronicDocuments() {
+  try {
+    await fetch("/api/e-invoicing/drain", { method: "POST" });
+  } catch {
+    // Offline or the server is busy: the next sync tries again.
   }
 }
 

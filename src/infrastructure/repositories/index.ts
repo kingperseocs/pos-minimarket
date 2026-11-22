@@ -9,6 +9,7 @@ import { DrizzlePresentationRepository } from "./drizzle-presentation-repository
 import { DrizzleProductRepository } from "./drizzle-product-repository";
 import { DrizzlePromoDiscountRepository } from "./drizzle-promo-discount-repository";
 import { DrizzleReceivingRepository } from "./drizzle-receiving-repository";
+import { DrizzleSaleDocumentRepository } from "./drizzle-sale-document-repository";
 import { DrizzleSaleRepository } from "./drizzle-sale-repository";
 import { DrizzleSalesAnalyticsRepository } from "./drizzle-sales-analytics-repository";
 import { DrizzleSalesGoalRepository } from "./drizzle-sales-goal-repository";
@@ -31,6 +32,7 @@ export const productRepository = new DrizzleProductRepository();
 export const promoDiscountRepository = new DrizzlePromoDiscountRepository();
 export const receivingRepository = new DrizzleReceivingRepository();
 export const saleRepository = new DrizzleSaleRepository();
+export const saleDocumentRepository = new DrizzleSaleDocumentRepository();
 export const salesAnalyticsRepository = new DrizzleSalesAnalyticsRepository();
 export const salesGoalRepository = new DrizzleSalesGoalRepository();
 // Example data for the dashboard before the store has real sales.
