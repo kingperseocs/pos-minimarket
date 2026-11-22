@@ -14,6 +14,7 @@ import {
   UsersIcon,
   WalletIcon,
   WarehouseIcon,
+  FileCheck2Icon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -39,6 +40,7 @@ import { LogoutButton } from "./logout-button";
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboardIcon },
   { href: "/admin/sales", label: "Ventas", icon: ReceiptTextIcon },
+  { href: "/admin/comprobantes", label: "Comprobantes", icon: FileCheck2Icon },
   { href: "/admin/caja", label: "Cierres de caja", icon: WalletIcon },
   { href: "/admin/categories", label: "Categorías", icon: TagsIcon },
   { href: "/admin/products", label: "Productos", icon: PackageIcon },

@@ -1,6 +1,8 @@
 import { ZodError } from "zod";
 import {
   InvalidWorkerCredentialsError,
+  MotorRejectedError,
+  MotorUnavailableError,
   TooManyAttemptsError,
   UnauthorizedError,
   ValidationError,
@@ -20,6 +22,9 @@ const USER_FACING_ERRORS = [
   WorkerAlreadyExistsError,
   InvalidWorkerCredentialsError,
   TooManyAttemptsError,
+  // The billing engine's messages are in Spanish, for the admin.
+  MotorRejectedError,
+  MotorUnavailableError,
 ];
 
 function toFailure(error: unknown): { ok: false; error: string } {

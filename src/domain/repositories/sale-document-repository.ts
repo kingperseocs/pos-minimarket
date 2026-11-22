@@ -1,5 +1,6 @@
 import type { SaleItemInput } from "../entities/sale";
 import type {
+  CustomerDocType,
   IgvAffectation,
   SaleDocument,
   SaleDocumentFilters,
@@ -18,6 +19,18 @@ export interface IssueContext {
   cashierName: string | null;
 }
 
+export interface RequeuePatch {
+  customer?: {
+    customerDocType: CustomerDocType;
+    customerDocNumber: string | null;
+    customerName: string | null;
+    customerAddress: string | null;
+  };
+  clearReview?: boolean;
+  idempotencyKey?: string;
+  resetMotor?: boolean;
+}
+
 export interface SaleDocumentRepository {
   // Locks the document for `lockMs` and marks it "sending", only if it is
   // due (queued or failed, its turn has come, below the attempt limit, not
@@ -32,7 +45,13 @@ export interface SaleDocumentRepository {
   // The motor refused it: no automatic retry until someone fixes it.
   markRejected(id: number, error: string): Promise<void>;
   findBySaleUuid(saleUuid: string): Promise<SaleDocument | null>;
-  findById(id: number): Promise<SaleDocument | null>;
+  findById(id: number): Promise<SaleDocumentListItem | null>;
+  // SUNAT's latest verdict, as the motor reports it.
+  updateMotorStatus(id: number, doc: MotorDocument): Promise<void>;
+  // Back to the queue, due now. Optionally with corrected customer data
+  // (clearing the review), a new idempotency key, or forgetting the motor
+  // document (after SUNAT rejected it).
+  requeue(id: number, patch: RequeuePatch): Promise<void>;
   // Documents of the sales charged in [from, to], newest first.
   list(filters: SaleDocumentFilters): Promise<SaleDocumentListItem[]>;
 }

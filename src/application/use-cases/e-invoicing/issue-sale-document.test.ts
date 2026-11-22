@@ -74,6 +74,8 @@ function fakes(opts: { claim?: IssueContext | null; issue?: () => Promise<MotorD
     async list() {
       return [];
     },
+    async updateMotorStatus() {},
+    async requeue() {},
   } as SaleDocumentRepository;
   const gateway = {
     async issue(type, request, key) {

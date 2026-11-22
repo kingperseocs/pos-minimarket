@@ -10,6 +10,7 @@ import type {
 import type { MotorDocument } from "@/domain/repositories/e-invoicing-gateway";
 import type {
   IssueContext,
+  RequeuePatch,
   SaleDocumentRepository,
 } from "@/domain/repositories/sale-document-repository";
 import { db } from "@/infrastructure/db/client";
@@ -196,9 +197,50 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
     }));
   }
 
-  async findById(id: number): Promise<SaleDocument | null> {
-    const [row] = await db.select().from(saleDocuments).where(eq(saleDocuments.id, id));
-    return row ? toSaleDocument(row) : null;
+  async findById(id: number): Promise<SaleDocumentListItem | null> {
+    const [row] = await db
+      .select({ doc: saleDocuments, total: sales.total, soldAt: sales.clientCreatedAt, cashierName: users.name })
+      .from(saleDocuments)
+      .innerJoin(sales, eq(sales.id, saleDocuments.saleId))
+      .leftJoin(users, eq(users.id, sales.cashierId))
+      .where(eq(saleDocuments.id, id));
+    return row
+      ? { ...toSaleDocument(row.doc), saleTotal: Number(row.total), soldAt: row.soldAt, cashierName: row.cashierName }
+      : null;
+  }
+
+  async updateMotorStatus(id: number, doc: MotorDocument): Promise<void> {
+    await db
+      .update(saleDocuments)
+      .set({
+        motorStatus: doc.status,
+        sunatCode: doc.sunatCode,
+        sunatDescription: doc.sunatDescription,
+        // The motor marks it ANULADO once the annulment batch is accepted.
+        ...(doc.status === "ANULADO" ? { status: "voided" as const } : {}),
+        updatedAt: sql`now()`,
+      })
+      .where(eq(saleDocuments.id, id));
+  }
+
+  async requeue(id: number, patch: RequeuePatch): Promise<void> {
+    await db
+      .update(saleDocuments)
+      .set({
+        status: "queued",
+        nextAttemptAt: sql`now()`,
+        attempts: 0,
+        lastError: null,
+        lockedUntil: null,
+        ...(patch.customer ?? {}),
+        ...(patch.clearReview ? { reviewReasons: [] } : {}),
+        ...(patch.idempotencyKey ? { idempotencyKey: patch.idempotencyKey } : {}),
+        ...(patch.resetMotor
+          ? { motorId: null, number: null, motorStatus: null, sunatCode: null, sunatDescription: null, issuedAt: null }
+          : {}),
+        updatedAt: sql`now()`,
+      })
+      .where(eq(saleDocuments.id, id));
   }
 
   async findBySaleUuid(saleUuid: string): Promise<SaleDocument | null> {
