@@ -16,10 +16,8 @@ import {
 } from "@/actions/e-invoicing";
 import { openDocumentPdf, printDocumentPdf } from "@/components/e-invoicing/print-pdf";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   CREDIT_NOTE_REASONS,
   DEBIT_NOTE_REASONS,
@@ -52,9 +50,38 @@ type Format = (typeof FORMATS)[number]["value"];
 
 const dateTime = new Intl.DateTimeFormat("es-PE", { dateStyle: "short", timeStyle: "short", timeZone: STORE_TIME_ZONE });
 
-// KeyFacil-style solid button for the modal grid.
-function ActionButton(props: React.ComponentProps<typeof Button>) {
-  return <Button {...props} className={`h-10 font-semibold uppercase tracking-wide ${props.className ?? ""}`} />;
+// KeyFacil-style solid button for the modal grid; greyed out when it does
+// not apply (an annulled document keeps only view, download and print).
+function ActionButton({ className, ...props }: React.ComponentProps<typeof Button>) {
+  return (
+    <Button
+      {...props}
+      className={`h-10 font-semibold uppercase tracking-wide disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 ${className ?? ""}`}
+    />
+  );
+}
+
+// A field with its label on the border (outlined), as on KeyFacil.
+function OutlinedField({
+  id,
+  label,
+  ...props
+}: { id: string; label: string } & React.ComponentProps<"input">) {
+  return (
+    <div className="relative">
+      <label
+        htmlFor={id}
+        className="absolute -top-2 left-3 bg-background px-1 text-xs text-muted-foreground peer-focus:text-primary"
+      >
+        {label}
+      </label>
+      <input
+        id={id}
+        {...props}
+        className="peer h-12 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none read-only:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+      />
+    </div>
+  );
 }
 
 type Form =
@@ -127,7 +154,7 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
     }
   }
 
-  // Admin: retry, reissue a rejected one, or fix the customer and issue.
+  // Admin: retry, or reissue a rejected one.
   function adminAction(action: "retry" | "reissue") {
     if (!detail) return;
     startTransition(async () => {
@@ -143,36 +170,30 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
 
   function submit() {
     if (!detail || !form) return;
-    if (form.kind === "approve") {
-      const docType = detail.docType === "factura" ? "6" : "1";
-      const filled = customer.number.trim() !== "" || customer.name.trim() !== "";
-      startTransition(async () => {
+    startTransition(async () => {
+      let message: string;
+      if (form.kind === "approve") {
+        const docType = detail.docType === "factura" ? "6" : "1";
+        const filled = customer.number.trim() !== "" || customer.name.trim() !== "";
         const result = await approveDocument(
           detail.id,
           filled ? { docType, number: customer.number, name: customer.name, address: customer.address || null } : null,
         );
-        if (!result.ok) {
-          toast.error(result.error);
-          return;
-        }
-        toast.success(OUTCOMES[result.data]);
-        setForm(null);
-        await load(detail.id);
-      });
-      return;
-    }
-    startTransition(async () => {
-      const result =
-        form.kind === "void"
-          ? await voidDocumentNow(detail.id, text)
-          : form.kind === "credit"
+        if (!result.ok) return void toast.error(result.error);
+        message = OUTCOMES[result.data];
+      } else if (form.kind === "void") {
+        const result = await voidDocumentNow(detail.id, text);
+        if (!result.ok) return void toast.error(result.error);
+        message = "Anulación enviada a SUNAT. Se confirmará en unos minutos.";
+      } else {
+        const result =
+          form.kind === "credit"
             ? await creditNoteFor(detail.id, { reasonCode: form.code, detail: text })
             : await debitNoteFor(detail.id, { reasonCode: form.code, detail: text, amount });
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
+        if (!result.ok) return void toast.error(result.error);
+        message = `Nota emitida: ${result.data}`;
       }
-      toast.success(form.kind === "void" ? "Anulación enviada a SUNAT." : `Nota emitida: ${result.data}`);
+      toast.success(message);
       setForm(null);
       await load(detail.id);
     });
@@ -188,182 +209,216 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
   }
 
   const status = detail?.status as SaleDocumentStatus | undefined;
+  const reference = detail ? `${FULL_TYPE_LABELS[detail.docType]} » ${detail.number ?? ""}` : "";
+  const formTitle =
+    form?.kind === "approve"
+      ? "Corregir el cliente"
+      : form?.kind === "void"
+        ? "Dar de baja (Anular)"
+        : form?.kind === "credit"
+          ? `Nota de crédito · ${CREDIT_NOTE_REASONS[form.code]}`
+          : form?.kind === "debit"
+            ? `Nota de débito · ${DEBIT_NOTE_REASONS[form.code]}`
+            : "";
 
   return (
-    <Dialog open={documentId !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <div className="bg-primary px-5 py-4 text-primary-foreground">
-          <DialogTitle className="text-lg font-semibold">Comprobante electrónico</DialogTitle>
-          <DialogDescription className="sr-only">Acciones del comprobante.</DialogDescription>
-        </div>
-
-        {!detail ? (
-          <div className="flex justify-center p-10">
-            <LoaderCircleIcon className="size-8 animate-spin text-muted-foreground" />
+    <>
+      <Dialog open={documentId !== null} onOpenChange={(open) => !open && onClose()}>
+        <DialogContent
+          // Slides up into place when it opens, as on KeyFacil.
+          className="gap-0 overflow-hidden p-0 duration-300 ease-out sm:max-w-md data-open:zoom-in-100 data-open:slide-in-from-bottom-16 data-closed:zoom-out-100 data-closed:slide-out-to-bottom-8 data-closed:duration-200"
+        >
+          <div className="bg-primary px-5 py-4 text-primary-foreground">
+            <DialogTitle className="text-lg font-semibold">Comprobante electrónico</DialogTitle>
+            <DialogDescription className="sr-only">Acciones del comprobante.</DialogDescription>
           </div>
-        ) : (
-          <div className="flex max-h-[75vh] flex-col gap-3 overflow-y-auto bg-muted/50 p-3">
-            <div className="rounded-lg bg-card p-4 text-center shadow-sm">
-              <p className="font-semibold">{FULL_TYPE_LABELS[detail.docType]}</p>
-              <p className="text-muted-foreground">{detail.number ?? "(sin número todavía)"}</p>
-              <p className="text-lg font-bold">{formatSoles(detail.saleTotal)}</p>
+
+          {!detail ? (
+            <div className="flex justify-center p-10">
+              <LoaderCircleIcon className="size-8 animate-spin text-muted-foreground" />
             </div>
+          ) : (
+            <div className="flex max-h-[75vh] flex-col gap-3 overflow-y-auto bg-muted/50 p-3">
+              <div className="rounded-lg bg-card p-4 text-center shadow-sm">
+                <p className="font-semibold">{FULL_TYPE_LABELS[detail.docType]}</p>
+                <p className="text-muted-foreground">{detail.number ?? "(sin número todavía)"}</p>
+                <p className="text-lg font-bold">{formatSoles(detail.saleTotal)}</p>
+              </div>
 
-            <dl className="divide-y rounded-lg bg-card text-sm shadow-sm">
-              <div className="px-4 py-3">
-                <dt className="font-medium uppercase">Cliente</dt>
-                <dd className="text-muted-foreground uppercase">
-                  {detail.customerName ?? "Clientes varios"}
-                  {detail.customerDocNumber && (
-                    <>
+              <div className="relative">
+                <dl className="divide-y rounded-lg bg-card text-sm shadow-sm">
+                  <div className="px-4 py-3">
+                    <dt className="font-medium uppercase">Cliente</dt>
+                    <dd className="text-muted-foreground uppercase">
+                      {detail.customerName ?? "Clientes varios"}
+                      {detail.customerDocNumber && (
+                        <>
+                          <br />
+                          {detail.customerDocType === "6" ? "RUC" : "DNI"} {detail.customerDocNumber}
+                        </>
+                      )}
+                    </dd>
+                  </div>
+                  <div className="px-4 py-3">
+                    <dt className="font-medium uppercase">Usuario</dt>
+                    <dd className="text-muted-foreground uppercase">
+                      {detail.cashierName ?? "—"}
                       <br />
-                      {detail.customerDocType === "6" ? "RUC" : "DNI"} {detail.customerDocNumber}
-                    </>
-                  )}
-                </dd>
-              </div>
-              <div className="px-4 py-3">
-                <dt className="font-medium uppercase">Usuario</dt>
-                <dd className="text-muted-foreground uppercase">
-                  {detail.cashierName ?? "—"}
-                  <br />
-                  {dateTime.format(new Date(detail.soldAt))}
-                </dd>
-              </div>
-              <div className="flex items-start justify-between gap-2 px-4 py-3">
-                <div>
-                  <dt className="font-medium uppercase">Estado SUNAT</dt>
-                  <dd className="text-muted-foreground uppercase">
-                    {status === "issued"
-                      ? (detail.motorStatus ?? "Enviado")
-                      : status
-                        ? SALE_DOCUMENT_STATUS_LABELS[status]
-                        : "—"}
-                  </dd>
-                </div>
-                {detail.hasMotorDocument && (
-                  <Button size="sm" variant="ghost" onClick={refresh} disabled={isPending}>
-                    Actualizar estado
-                  </Button>
+                      {dateTime.format(new Date(detail.soldAt))}
+                    </dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-2 px-4 py-3">
+                    <div>
+                      <dt className="font-medium uppercase">Estado SUNAT</dt>
+                      <dd className="text-muted-foreground uppercase">
+                        {status === "issued"
+                          ? (detail.motorStatus ?? "Enviado")
+                          : status
+                            ? SALE_DOCUMENT_STATUS_LABELS[status]
+                            : "—"}
+                      </dd>
+                    </div>
+                    {detail.hasMotorDocument && (
+                      <Button size="sm" variant="ghost" onClick={refresh} disabled={isPending}>
+                        Actualizar estado
+                      </Button>
+                    )}
+                  </div>
+                </dl>
+                {/* The stamp across the data, as on KeyFacil. */}
+                {(detail.cancelled || detail.voidPending) && (
+                  <span
+                    aria-label={detail.cancelled ? "Anulado" : "Baja en proceso"}
+                    className={`pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-[24deg] rounded-md px-5 py-2 text-3xl font-black tracking-wider whitespace-nowrap text-white uppercase shadow-lg ${
+                      detail.cancelled ? "bg-red-600/90" : "bg-amber-500/90 text-xl"
+                    }`}
+                  >
+                    {detail.cancelled ? "Anulado" : "Baja en proceso"}
+                  </span>
                 )}
               </div>
-            </dl>
 
-            {status === "review" && !detail.admin && (
-              <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
-                En revisión. El administrador lo emitirá.
-              </p>
-            )}
+              {status === "review" && !detail.admin && (
+                <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+                  En revisión. El administrador lo emitirá.
+                </p>
+              )}
 
-            {detail.admin && (status === "review" || status === "failed" || status === "queued" || detail.admin.canReissue) && (
-              <div className="flex flex-col gap-2 rounded-lg bg-card p-4 text-sm shadow-sm">
-                <p className="font-medium uppercase">Administrador</p>
-                {status === "review" && (
-                  <p className="text-amber-800 dark:text-amber-300">
-                    En revisión: {detail.admin.reviewReasons.map((r) => REVIEW_REASON_LABELS[r as ReviewReason]).join(", ")}.
-                    {!detail.admin.canApprove &&
-                      " Se emitirá cuando el contador defina cómo declarar descuentos, regalos, puntos y redondeo."}
-                  </p>
+              {detail.admin &&
+                (status === "review" || status === "failed" || status === "queued" || detail.admin.canReissue) && (
+                  <div className="flex flex-col gap-2 rounded-lg bg-card p-4 text-sm shadow-sm">
+                    <p className="font-medium uppercase">Administrador</p>
+                    {status === "review" && (
+                      <p className="text-amber-800 dark:text-amber-300">
+                        En revisión:{" "}
+                        {detail.admin.reviewReasons.map((r) => REVIEW_REASON_LABELS[r as ReviewReason]).join(", ")}.
+                        {!detail.admin.canApprove &&
+                          " Se emitirá cuando el contador defina cómo declarar descuentos, regalos, puntos y redondeo."}
+                      </p>
+                    )}
+                    {detail.admin.lastError && <p className="text-red-700 dark:text-red-400">{detail.admin.lastError}</p>}
+                    <div className="flex flex-wrap gap-2">
+                      {detail.admin.canRetry && (
+                        <Button size="sm" onClick={() => adminAction("retry")} disabled={isPending}>
+                          Reintentar ahora
+                        </Button>
+                      )}
+                      {detail.admin.canReissue && (
+                        <Button size="sm" onClick={() => adminAction("reissue")} disabled={isPending}>
+                          Emitir de nuevo (SUNAT lo rechazó)
+                        </Button>
+                      )}
+                      {detail.admin.canApprove && (
+                        <Button size="sm" onClick={() => openForm({ kind: "approve" })} disabled={isPending}>
+                          Corregir cliente y emitir
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 )}
-                {detail.admin.lastError && <p className="text-red-700 dark:text-red-400">{detail.admin.lastError}</p>}
-                <div className="flex flex-wrap gap-2">
-                  {detail.admin.canRetry && (
-                    <Button size="sm" onClick={() => adminAction("retry")} disabled={isPending}>
-                      Reintentar ahora
-                    </Button>
-                  )}
-                  {detail.admin.canReissue && (
-                    <Button size="sm" onClick={() => adminAction("reissue")} disabled={isPending}>
-                      Emitir de nuevo (SUNAT lo rechazó)
-                    </Button>
-                  )}
-                  {detail.admin.canApprove && (
-                    <Button size="sm" onClick={() => openForm({ kind: "approve" })} disabled={isPending}>
-                      Corregir cliente y emitir
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
 
-            {detail.hasMotorDocument && (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex">
-                  <ActionButton className="flex-1 rounded-r-none" onClick={() => openDocumentPdf(detail.id, "a4")}>
-                    Visualizar PDF
-                  </ActionButton>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={<Button className="h-10 rounded-l-none border-l border-primary-foreground/20 px-2" aria-label="Formato" />}
-                    >
-                      <ChevronDownIcon />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      {FORMATS.map((f) => (
-                        <DropdownMenuItem key={f.value} onClick={() => openDocumentPdf(detail.id, f.value)}>
-                          {f.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <div className="flex">
-                  <ActionButton className="flex-1 rounded-r-none" onClick={() => download("pdf", "a4")}>
-                    Descargar PDF
-                  </ActionButton>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={<Button className="h-10 rounded-l-none border-l border-primary-foreground/20 px-2" aria-label="Formato" />}
-                    >
-                      <ChevronDownIcon />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      {FORMATS.map((f) => (
-                        <DropdownMenuItem key={f.value} onClick={() => download("pdf", f.value)}>
-                          {f.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <ActionButton className="col-span-2" onClick={() => void print("ticket")}>
-                  Imprimir
-                </ActionButton>
-                {detail.valid && (
-                  <>
+              {detail.hasMotorDocument && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex">
+                    <ActionButton className="flex-1 rounded-r-none" onClick={() => openDocumentPdf(detail.id, "a4")}>
+                      Visualizar PDF
+                    </ActionButton>
                     <DropdownMenu>
-                      <DropdownMenuTrigger render={<ActionButton />}>
-                        Nota de crédito <ChevronDownIcon data-icon="inline-end" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        {Object.entries(CREDIT_NOTE_REASONS)
-                          .filter(([code]) => code !== "02" || detail.docType === "factura")
-                          .map(([code, label]) => (
-                            <DropdownMenuItem key={code} onClick={() => openForm({ kind: "credit", code })}>
-                              {code} · {label}
-                            </DropdownMenuItem>
-                          ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger render={<ActionButton />}>
-                        Nota de débito <ChevronDownIcon data-icon="inline-end" />
+                      <DropdownMenuTrigger
+                        render={
+                          <Button className="h-10 rounded-l-none border-l border-primary-foreground/20 px-2" aria-label="Formato" />
+                        }
+                      >
+                        <ChevronDownIcon />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        {Object.entries(DEBIT_NOTE_REASONS).map(([code, label]) => (
-                          <DropdownMenuItem key={code} onClick={() => openForm({ kind: "debit", code })}>
-                            {code} · {label}
+                        {FORMATS.map((f) => (
+                          <DropdownMenuItem key={f.value} onClick={() => openDocumentPdf(detail.id, f.value)}>
+                            {f.label}
                           </DropdownMenuItem>
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </>
-                )}
-                <ActionButton onClick={() => download("xml")}>Descargar XML</ActionButton>
-                <ActionButton onClick={() => download("cdr")} disabled={detail.motorStatus === "PENDIENTE"}>
-                  Descargar CDR
-                </ActionButton>
-                {detail.valid && (
+                  </div>
+                  <div className="flex">
+                    <ActionButton className="flex-1 rounded-r-none" onClick={() => download("pdf", "a4")}>
+                      Descargar PDF
+                    </ActionButton>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button className="h-10 rounded-l-none border-l border-primary-foreground/20 px-2" aria-label="Formato" />
+                        }
+                      >
+                        <ChevronDownIcon />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        {FORMATS.map((f) => (
+                          <DropdownMenuItem key={f.value} onClick={() => download("pdf", f.value)}>
+                            {f.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <ActionButton className="col-span-2" onClick={() => void print("ticket")}>
+                    Imprimir
+                  </ActionButton>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger render={<ActionButton disabled={!detail.valid} />}>
+                      Nota de crédito <ChevronDownIcon data-icon="inline-end" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {Object.entries(CREDIT_NOTE_REASONS)
+                        .filter(([code]) => code !== "02" || detail.docType === "factura")
+                        .map(([code, label]) => (
+                          <DropdownMenuItem key={code} onClick={() => openForm({ kind: "credit", code })}>
+                            {code} · {label}
+                          </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger render={<ActionButton disabled={!detail.valid} />}>
+                      Nota de débito <ChevronDownIcon data-icon="inline-end" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {Object.entries(DEBIT_NOTE_REASONS).map(([code, label]) => (
+                        <DropdownMenuItem key={code} onClick={() => openForm({ kind: "debit", code })}>
+                          {code} · {label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <ActionButton onClick={() => download("xml")} disabled={detail.cancelled}>
+                    Descargar XML
+                  </ActionButton>
+                  <ActionButton
+                    onClick={() => download("cdr")}
+                    disabled={detail.cancelled || detail.motorStatus === "PENDIENTE"}
+                  >
+                    Descargar CDR
+                  </ActionButton>
                   <ActionButton
                     variant="destructive"
                     className="col-span-2"
@@ -372,123 +427,115 @@ export function DocumentModal({ documentId, onClose }: { documentId: number | nu
                   >
                     Dar de baja (anular)
                   </ActionButton>
-                )}
-              </div>
-            )}
-            {detail.valid && !detail.canVoid && (
-              <p className="text-center text-xs text-muted-foreground">
-                Ya pasaron {VOID_MAX_DAYS} días: para anularlo emite una nota de crédito.
-              </p>
-            )}
-
-            {form && (
-              <form
-                className="flex flex-col gap-2 rounded-lg bg-card p-4 shadow-sm"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  submit();
-                }}
-              >
-                <p className="text-sm font-semibold">
-                  {form.kind === "approve"
-                    ? "Corregir el cliente"
-                    : form.kind === "void"
-                    ? "Dar de baja"
-                    : form.kind === "credit"
-                      ? `Nota de crédito · ${CREDIT_NOTE_REASONS[form.code]}`
-                      : `Nota de débito · ${DEBIT_NOTE_REASONS[form.code]}`}
+                </div>
+              )}
+              {detail.valid && !detail.voidPending && !detail.canVoid && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Ya pasaron {VOID_MAX_DAYS} días: para anularlo emite una nota de crédito.
                 </p>
-                {form.kind === "void" && (
-                  <p className="text-xs text-muted-foreground">
+              )}
+
+              {detail.notes.length > 0 && (
+                <ul className="divide-y rounded-lg bg-card text-sm shadow-sm">
+                  {detail.notes.map((note) => (
+                    <li key={note.id} className="px-4 py-2">
+                      <p className="font-medium">
+                        {SALE_DOCUMENT_NOTE_KIND_LABELS[note.kind as SaleDocumentNoteKind]} {note.number}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {note.reasonText} · {note.motorStatus}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Annul, notes and customer fix: a dialog of their own on top. */}
+      <Dialog open={form !== null} onOpenChange={(open) => !open && setForm(null)}>
+        <DialogContent className="duration-200 sm:max-w-sm data-open:slide-in-from-bottom-8" showCloseButton={false}>
+          <DialogTitle>{formTitle}</DialogTitle>
+          <DialogDescription className="sr-only">Completa los datos y confirma.</DialogDescription>
+          <form
+            id="document-action-form"
+            className="flex flex-col gap-5 pt-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit();
+            }}
+          >
+            <OutlinedField id="action-reference" label="Referencia" value={reference} readOnly tabIndex={-1} />
+            {form?.kind === "approve" ? (
+              <>
+                <OutlinedField
+                  id="fix-number"
+                  label={detail?.docType === "factura" ? "RUC" : "DNI"}
+                  inputMode="numeric"
+                  autoFocus
+                  value={customer.number}
+                  onChange={(e) => setCustomer({ ...customer, number: e.target.value.replace(/\D/g, "") })}
+                />
+                <OutlinedField
+                  id="fix-name"
+                  label={detail?.docType === "factura" ? "Razón social" : "Nombre"}
+                  value={customer.name}
+                  onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
+                />
+                {detail?.docType === "factura" && (
+                  <OutlinedField
+                    id="fix-address"
+                    label="Dirección"
+                    value={customer.address}
+                    onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                {form?.kind === "debit" && (
+                  <OutlinedField
+                    id="action-amount"
+                    label="Monto (S/, con IGV)"
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
+                  />
+                )}
+                <OutlinedField
+                  id="action-text"
+                  label={form?.kind === "void" ? "Motivo" : form?.kind === "credit" ? "Sustento" : "Concepto"}
+                  autoFocus
+                  value={text}
+                  maxLength={form?.kind === "void" ? 100 : 250}
+                  onChange={(e) => setText(e.target.value)}
+                />
+                {form?.kind === "void" && (
+                  <p className="-mt-2 text-xs text-muted-foreground">
                     SUNAT recibe la anulación en un lote y la confirma en minutos u horas.
                   </p>
                 )}
-                {form.kind === "approve" && (
-                  <>
-                    <div className="flex flex-col gap-1">
-                      <Label htmlFor="fix-number">{detail.docType === "factura" ? "RUC" : "DNI"}</Label>
-                      <Input
-                        id="fix-number"
-                        inputMode="numeric"
-                        value={customer.number}
-                        onChange={(e) => setCustomer({ ...customer, number: e.target.value.replace(/\D/g, "") })}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <Label htmlFor="fix-name">{detail.docType === "factura" ? "Razón social" : "Nombre"}</Label>
-                      <Input id="fix-name" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
-                    </div>
-                    {detail.docType === "factura" && (
-                      <div className="flex flex-col gap-1">
-                        <Label htmlFor="fix-address">Dirección</Label>
-                        <Input
-                          id="fix-address"
-                          value={customer.address}
-                          onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
-                        />
-                      </div>
-                    )}
-                  </>
-                )}
-                {form.kind === "debit" && (
-                  <div className="flex flex-col gap-1">
-                    <Label htmlFor="modal-amount">Monto (S/, con IGV)</Label>
-                    <Input
-                      id="modal-amount"
-                      inputMode="decimal"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
-                    />
-                  </div>
-                )}
-                {form.kind !== "approve" && (
-                <div className="flex flex-col gap-1">
-                  <Label htmlFor="modal-text">
-                    {form.kind === "void" ? "Motivo" : form.kind === "credit" ? "Sustento" : "Concepto"}
-                  </Label>
-                  <Input
-                    id="modal-text"
-                    autoFocus
-                    value={text}
-                    maxLength={form.kind === "void" ? 100 : 250}
-                    placeholder={form.kind === "void" ? "Ej.: ERROR EN LA VENTA" : undefined}
-                    onChange={(e) => setText(e.target.value)}
-                  />
-                </div>
-                )}
-                <div className="flex gap-2">
-                  <Button
-                    type="submit"
-                    variant={form.kind === "void" ? "destructive" : "default"}
-                    disabled={isPending || (form.kind !== "approve" && text.trim().length < 3)}
-                  >
-                    {isPending && <LoaderCircleIcon className="animate-spin" />}
-                    {form.kind === "void" ? "Confirmar baja" : form.kind === "approve" ? "Emitir" : "Emitir nota"}
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={() => setForm(null)}>
-                    Cancelar
-                  </Button>
-                </div>
-              </form>
+              </>
             )}
-
-            {detail.notes.length > 0 && (
-              <ul className="divide-y rounded-lg bg-card text-sm shadow-sm">
-                {detail.notes.map((note) => (
-                  <li key={note.id} className="px-4 py-2">
-                    <p className="font-medium">
-                      {SALE_DOCUMENT_NOTE_KIND_LABELS[note.kind as SaleDocumentNoteKind]} {note.number}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {note.reasonText} · {note.motorStatus}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+          </form>
+          <DialogFooter>
+            <Button variant="outline" className="uppercase" onClick={() => setForm(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              form="document-action-form"
+              className="uppercase"
+              disabled={isPending || (form?.kind !== "approve" && text.trim().length < 3)}
+            >
+              {isPending && <LoaderCircleIcon className="animate-spin" />}
+              {form?.kind === "void" ? "Anular" : "Emitir"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -149,6 +149,10 @@ export interface DocumentDetail {
   hasMotorDocument: boolean;
   // SUNAT holds it as valid: annul and notes are possible.
   valid: boolean;
+  // Annulled, or cancelled by a credit note: shown with the ANULADO stamp.
+  cancelled: boolean;
+  // An annulment was sent and SUNAT has not confirmed it yet.
+  voidPending: boolean;
   canVoid: boolean;
   // Admin only: what can be done about a document that is not issued well.
   admin: {
@@ -169,7 +173,10 @@ export async function getDocumentDetail(id: number) {
     const actor = await requireActor();
     const doc = await ownedDocument(id, actor);
     const notes = await eInvoicingNotesDeps.notes.listByDocument(doc.id);
-    const valid = doc.status === "issued" && (doc.motorStatus === "ACEPTADO" || doc.motorStatus === "OBSERVADO");
+    const cancelled = doc.status === "voided" || doc.motorStatus === "ANULADO" || doc.cancelledByNote;
+    const voidPending = !cancelled && notes.some((n) => n.kind === "void" && n.motorStatus !== "RECHAZADO");
+    const valid =
+      !cancelled && doc.status === "issued" && (doc.motorStatus === "ACEPTADO" || doc.motorStatus === "OBSERVADO");
     return {
       id: doc.id,
       docType: doc.docType,
@@ -185,7 +192,9 @@ export async function getDocumentDetail(id: number) {
       cashierName: doc.cashierName,
       hasMotorDocument: doc.motorId !== null,
       valid,
-      canVoid: valid && canVoid(doc, new Date()),
+      cancelled,
+      voidPending,
+      canVoid: valid && !voidPending && canVoid(doc, new Date()),
       admin: actor.isAdmin
         ? {
             canRetry: doc.status === "failed" || doc.status === "queued",
