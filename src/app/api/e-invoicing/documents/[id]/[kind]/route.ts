@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { can } from "@/domain/entities/user";
 import { MotorRejectedError, MotorUnavailableError } from "@/domain/errors";
 import type { MotorFileKind, MotorPdfFormat } from "@/domain/repositories/e-invoicing-gateway";
-import { storeDateKey } from "@/domain/value-objects/store-time";
 import { userWithPermission } from "@/infrastructure/auth/guards";
 import { eInvoicingGateway } from "@/infrastructure/e-invoicing";
 import { saleDocumentRepository } from "@/infrastructure/repositories";
@@ -12,8 +11,8 @@ const FORMATS: MotorPdfFormat[] = ["ticket", "a4", "a5"];
 
 // The PDF / XML / CDR of a document, fetched from the motor with the POS's
 // credentials (they never reach the browser). Looked up by the POS's own id:
-// an arbitrary motor id is never accepted. A cashier gets today's PDFs; the
-// rest (older documents, XML and CDR) is for the admin.
+// an arbitrary motor id is never accepted. A cashier gets those of the
+// sales they charged; the admin, any.
 export async function GET(request: Request, ctx: RouteContext<"/api/e-invoicing/documents/[id]/[kind]">) {
   const user = await userWithPermission("sell");
   if (!user) {
@@ -28,10 +27,9 @@ export async function GET(request: Request, ctx: RouteContext<"/api/e-invoicing/
   if (!doc || !doc.motorId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const isAdmin = can(user.role, "manage");
-  const today = storeDateKey(doc.createdAt) === storeDateKey(new Date());
-  if (!isAdmin && (kind !== "pdf" || !today)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // A cashier gets the files of the sales they charged; the admin, any.
+  if (!can(user.role, "manage") && doc.cashierId !== user.id) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const requested = new URL(request.url).searchParams.get("formato") ?? "ticket";
@@ -39,7 +37,10 @@ export async function GET(request: Request, ctx: RouteContext<"/api/e-invoicing/
   try {
     const file = await eInvoicingGateway.file(doc.motorId, kind as MotorFileKind, format);
     const headers = new Headers({ "Content-Type": file.contentType, "Cache-Control": "private, no-store" });
-    if (file.contentDisposition) headers.set("Content-Disposition", file.contentDisposition);
+    // ?descarga=1 saves it instead of opening it in the browser.
+    const download = new URL(request.url).searchParams.get("descarga") === "1";
+    const disposition = file.contentDisposition ?? `inline; filename="${doc.number ?? "comprobante"}.${kind === "cdr" ? "zip" : kind}"`;
+    headers.set("Content-Disposition", download ? disposition.replace(/^inline/, "attachment") : disposition);
     return new Response(file.body, { headers });
   } catch (error) {
     if (error instanceof MotorRejectedError) {

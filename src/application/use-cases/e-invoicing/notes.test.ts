@@ -13,6 +13,7 @@ import { canVoid, issueCreditNote, issueDebitNote, type NotesDeps, voidDocument 
 
 const UUID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
 const NOW = new Date("2026-11-22T15:00:00.000Z");
+const ADMIN = { id: 1, isAdmin: true };
 
 function doc(over: Partial<SaleDocumentListItem> = {}): SaleDocumentListItem {
   return {
@@ -21,7 +22,7 @@ function doc(over: Partial<SaleDocumentListItem> = {}): SaleDocumentListItem {
     status: "issued", reviewReasons: [], motorId: "m-1", number: "B001-8", motorStatus: "ACEPTADO",
     sunatCode: 0, sunatDescription: "ok", idempotencyKey: UUID, attempts: 1, lastError: null,
     nextAttemptAt: NOW, issuedAt: new Date("2026-11-21T15:00:00.000Z"), createdAt: NOW,
-    saleTotal: 14, soldAt: NOW, cashierName: "CAJA 1",
+    saleTotal: 14, cashierId: 2, soldAt: NOW, cashierName: "CAJA 1",
     ...over,
   };
 }
@@ -71,7 +72,7 @@ function fakes(current: SaleDocumentListItem) {
 describe("voidDocument", () => {
   it("sends the annulment and records the batch", async () => {
     const { deps, created, sent } = fakes(doc());
-    await voidDocument(deps, 7, "error en la venta", 1);
+    await voidDocument(deps, 7, "error en la venta", ADMIN);
     assert.deepEqual(sent, [{ kind: "void", reason: "ERROR EN LA VENTA" }]);
     assert.equal(created[0].kind, "void");
     assert.equal(created[0].number, "RC-20261122-1");
@@ -80,9 +81,9 @@ describe("voidDocument", () => {
 
   it("refuses after 7 days, or before SUNAT accepted it", async () => {
     const old = fakes(doc({ issuedAt: new Date("2026-11-10T15:00:00.000Z") }));
-    await assert.rejects(voidDocument(old.deps, 7, "ERROR", 1), /7 días/);
+    await assert.rejects(voidDocument(old.deps, 7, "ERROR", ADMIN), /7 días/);
     const pending = fakes(doc({ motorStatus: "PENDIENTE" }));
-    await assert.rejects(voidDocument(pending.deps, 7, "ERROR", 1), ValidationError);
+    await assert.rejects(voidDocument(pending.deps, 7, "ERROR", ADMIN), ValidationError);
     assert.equal(canVoid(doc({ issuedAt: null }), NOW), false);
   });
 });
@@ -90,7 +91,7 @@ describe("voidDocument", () => {
 describe("issueCreditNote", () => {
   it("uses the boleta credit-note series and a key per note", async () => {
     const { deps, created, sent } = fakes(doc());
-    await issueCreditNote(deps, 7, { reasonCode: "01", detail: "cliente desistió" }, 1);
+    await issueCreditNote(deps, 7, { reasonCode: "01", detail: "cliente desistió" }, ADMIN);
     assert.equal(sent[0].request?.serie, "BC01");
     assert.equal(sent[0].request?.documento_afectado_id, "m-1");
     assert.equal(sent[0].key, `${UUID}:nc1`);
@@ -99,14 +100,14 @@ describe("issueCreditNote", () => {
 
   it("«error en el RUC» only for facturas", async () => {
     const { deps } = fakes(doc());
-    await assert.rejects(issueCreditNote(deps, 7, { reasonCode: "02", detail: "RUC errado" }, 1), /facturas/);
+    await assert.rejects(issueCreditNote(deps, 7, { reasonCode: "02", detail: "RUC errado" }, ADMIN), /facturas/);
   });
 });
 
 describe("issueDebitNote", () => {
   it("charges the amount as one line", async () => {
     const { deps, sent } = fakes(doc({ docType: "factura" }));
-    await issueDebitNote(deps, 7, { reasonCode: "01", detail: "intereses", amount: 5 }, 1);
+    await issueDebitNote(deps, 7, { reasonCode: "01", detail: "intereses", amount: 5 }, ADMIN);
     assert.equal(sent[0].request?.serie, "FD01");
     assert.equal(sent[0].request?.items?.[0].precio_unitario, "5.00");
     assert.equal(sent[0].key, `${UUID}:nd1`);
@@ -114,6 +115,14 @@ describe("issueDebitNote", () => {
 
   it("needs a positive amount", async () => {
     const { deps } = fakes(doc());
-    await assert.rejects(issueDebitNote(deps, 7, { reasonCode: "01", detail: "x y z", amount: 0 }, 1), ValidationError);
+    await assert.rejects(issueDebitNote(deps, 7, { reasonCode: "01", detail: "x y z", amount: 0 }, ADMIN), ValidationError);
+  });
+});
+
+describe("who may act", () => {
+  it("a cashier only on the sales they charged", async () => {
+    const { deps } = fakes(doc());
+    await assert.rejects(voidDocument(deps, 7, "ERROR EN LA VENTA", { id: 5, isAdmin: false }), /tú cobraste/);
+    await voidDocument(deps, 7, "ERROR EN LA VENTA", { id: 2, isAdmin: false });
   });
 });

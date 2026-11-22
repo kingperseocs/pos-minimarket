@@ -127,6 +127,7 @@ export interface SaleDocument {
 // with what the till charged.
 export interface SaleDocumentListItem extends SaleDocument {
   saleTotal: number;
+  cashierId: number;
   soldAt: Date;
   cashierName: string | null;
 }

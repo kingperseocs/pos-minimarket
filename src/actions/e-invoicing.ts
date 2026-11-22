@@ -10,17 +10,35 @@ import {
   retryDocument,
 } from "@/application/use-cases/e-invoicing/manage-document";
 import {
+  type Actor,
+  canActOn,
+  canVoid,
   issueCreditNote,
   issueDebitNote,
   refreshDocumentNotes,
   voidDocument,
 } from "@/application/use-cases/e-invoicing/notes";
 import { idSchema } from "@/application/validation/id";
+import { can } from "@/domain/entities/user";
+import { ValidationError } from "@/domain/errors";
 import { requirePermission } from "@/infrastructure/auth/guards";
 import { eInvoicingDeps, eInvoicingNotesDeps } from "@/infrastructure/deps";
 import { runDataAction } from "./action-result";
 
 const requireAdmin = () => requirePermission("manage");
+
+// Cashier or admin: a cashier only acts on the sales they charged (checked
+// in each use case with the actor).
+async function requireActor(): Promise<Actor> {
+  const user = await requirePermission("sell");
+  return { id: user.id, isAdmin: can(user.role, "manage") };
+}
+
+async function ownedDocument(id: number, actor: Actor) {
+  const doc = await eInvoicingNotesDeps.documents.findById(idSchema.parse(id));
+  if (!doc || !canActOn(doc, actor)) throw new ValidationError("El comprobante no existe.");
+  return doc;
+}
 
 function revalidateDocuments() {
   revalidatePath("/admin/comprobantes", "layout");
@@ -38,7 +56,8 @@ const customerSchema = z
 
 export async function refreshDocument(id: number) {
   return runDataAction(async () => {
-    await requireAdmin();
+    const actor = await requireActor();
+    await ownedDocument(id, actor);
     const doc = await refreshDocumentStatus(eInvoicingDeps, idSchema.parse(id));
     await refreshDocumentNotes(eInvoicingNotesDeps, doc.id);
     revalidateDocuments();
@@ -84,8 +103,8 @@ export async function retryPendingDocuments() {
 
 export async function voidDocumentNow(id: number, reason: string) {
   return runDataAction(async () => {
-    const admin = await requireAdmin();
-    const batch = await voidDocument(eInvoicingNotesDeps, idSchema.parse(id), z.string().parse(reason), admin.id);
+    const actor = await requireActor();
+    const batch = await voidDocument(eInvoicingNotesDeps, idSchema.parse(id), z.string().parse(reason), actor);
     revalidateDocuments();
     return batch.status;
   });
@@ -95,8 +114,8 @@ const noteSchema = z.object({ reasonCode: z.string(), detail: z.string() });
 
 export async function creditNoteFor(id: number, input: unknown) {
   return runDataAction(async () => {
-    const admin = await requireAdmin();
-    const note = await issueCreditNote(eInvoicingNotesDeps, idSchema.parse(id), noteSchema.parse(input), admin.id);
+    const actor = await requireActor();
+    const note = await issueCreditNote(eInvoicingNotesDeps, idSchema.parse(id), noteSchema.parse(input), actor);
     revalidateDocuments();
     return `${note.number} · ${note.status}`;
   });
@@ -104,10 +123,65 @@ export async function creditNoteFor(id: number, input: unknown) {
 
 export async function debitNoteFor(id: number, input: unknown) {
   return runDataAction(async () => {
-    const admin = await requireAdmin();
+    const actor = await requireActor();
     const parsed = noteSchema.extend({ amount: z.coerce.number() }).parse(input);
-    const note = await issueDebitNote(eInvoicingNotesDeps, idSchema.parse(id), parsed, admin.id);
+    const note = await issueDebitNote(eInvoicingNotesDeps, idSchema.parse(id), parsed, actor);
     revalidateDocuments();
     return `${note.number} · ${note.status}`;
+  });
+}
+
+export interface DocumentDetail {
+  id: number;
+  docType: "boleta" | "factura";
+  number: string | null;
+  status: string;
+  motorStatus: string | null;
+  sunatDescription: string | null;
+  customerDocType: string;
+  customerDocNumber: string | null;
+  customerName: string | null;
+  saleTotal: number;
+  soldAt: string;
+  cashierName: string | null;
+  hasMotorDocument: boolean;
+  // SUNAT holds it as valid: annul and notes are possible.
+  valid: boolean;
+  canVoid: boolean;
+  notes: { id: number; kind: string; number: string | null; reasonText: string; motorStatus: string | null }[];
+}
+
+// What the document modal shows (the cashier's own sales, or any for the
+// admin).
+export async function getDocumentDetail(id: number) {
+  return runDataAction<DocumentDetail>(async () => {
+    const actor = await requireActor();
+    const doc = await ownedDocument(id, actor);
+    const notes = await eInvoicingNotesDeps.notes.listByDocument(doc.id);
+    const valid = doc.status === "issued" && (doc.motorStatus === "ACEPTADO" || doc.motorStatus === "OBSERVADO");
+    return {
+      id: doc.id,
+      docType: doc.docType,
+      number: doc.number,
+      status: doc.status,
+      motorStatus: doc.motorStatus,
+      sunatDescription: doc.sunatDescription,
+      customerDocType: doc.customerDocType,
+      customerDocNumber: doc.customerDocNumber,
+      customerName: doc.customerName,
+      saleTotal: doc.saleTotal,
+      soldAt: doc.soldAt.toISOString(),
+      cashierName: doc.cashierName,
+      hasMotorDocument: doc.motorId !== null,
+      valid,
+      canVoid: valid && canVoid(doc, new Date()),
+      notes: notes.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        number: n.number,
+        reasonText: n.reasonText,
+        motorStatus: n.motorStatus,
+      })),
+    };
   });
 }

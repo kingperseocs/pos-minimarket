@@ -20,6 +20,23 @@ export interface NotesDeps {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Who acts: a cashier may only act on the sales they charged; the admin, on
+// any. (The 7-day annulment rule applies to both.)
+export interface Actor {
+  id: number;
+  isAdmin: boolean;
+}
+
+export function canActOn(doc: Pick<SaleDocumentListItem, "cashierId">, actor: Actor): boolean {
+  return actor.isAdmin || doc.cashierId === actor.id;
+}
+
+function assertOwner(doc: SaleDocumentListItem, actor: Actor) {
+  if (!canActOn(doc, actor)) {
+    throw new ValidationError("Solo puedes hacerlo con las ventas que tú cobraste.");
+  }
+}
+
 // Only a document SUNAT holds as valid can be annulled or noted.
 function assertValid(doc: SaleDocumentListItem | null): asserts doc is SaleDocumentListItem & { motorId: string } {
   if (!doc) throw new ValidationError("El comprobante no existe.");
@@ -49,9 +66,10 @@ export function canVoid(doc: Pick<SaleDocumentListItem, "issuedAt">, now: Date):
 // Annuls the document with SUNAT: a factura by comunicación de baja (RA), a
 // boleta by resumen diario (RC). SUNAT answers the batch later; the motor
 // follows it up and the document turns ANULADO (refresh its status).
-export async function voidDocument(deps: NotesDeps, id: number, reason: string, userId: number) {
+export async function voidDocument(deps: NotesDeps, id: number, reason: string, actor: Actor) {
   const doc = await deps.documents.findById(id);
   assertValid(doc);
+  assertOwner(doc, actor);
   if (!canVoid(doc, (deps.now ?? (() => new Date()))())) {
     throw new ValidationError(
       `Pasaron más de ${VOID_MAX_DAYS} días desde la emisión: ya no se puede anular. Emite una nota de crédito.`,
@@ -67,7 +85,7 @@ export async function voidDocument(deps: NotesDeps, id: number, reason: string, 
     reasonCode: null,
     reasonText: motivo,
     motorStatus: batch.status,
-    createdBy: userId,
+    createdBy: actor.id,
   });
   if (batch.status === "ACEPTADO") {
     await deps.documents.updateMotorStatus(doc.id, {
@@ -93,10 +111,11 @@ export async function issueCreditNote(
   deps: NotesDeps,
   id: number,
   input: { reasonCode: string; detail: string },
-  userId: number,
+  actor: Actor,
 ) {
   const doc = await deps.documents.findById(id);
   assertValid(doc);
+  assertOwner(doc, actor);
   if (!(input.reasonCode in CREDIT_NOTE_REASONS)) throw new ValidationError("Elige un motivo de la lista.");
   if (input.reasonCode === "02" && doc.docType !== "factura") {
     throw new ValidationError("«Error en el RUC» solo aplica a facturas.");
@@ -120,7 +139,7 @@ export async function issueCreditNote(
     reasonCode: input.reasonCode,
     reasonText: sustento,
     motorStatus: note.status,
-    createdBy: userId,
+    createdBy: actor.id,
   });
   return note;
 }
@@ -130,10 +149,11 @@ export async function issueDebitNote(
   deps: NotesDeps,
   id: number,
   input: { reasonCode: string; detail: string; amount: number },
-  userId: number,
+  actor: Actor,
 ) {
   const doc = await deps.documents.findById(id);
   assertValid(doc);
+  assertOwner(doc, actor);
   if (!(input.reasonCode in DEBIT_NOTE_REASONS)) throw new ValidationError("Elige un motivo de la lista.");
   if (!Number.isFinite(input.amount) || input.amount <= 0 || input.amount > 99999) {
     throw new ValidationError("El monto debe ser mayor a cero.");
@@ -167,7 +187,7 @@ export async function issueDebitNote(
     reasonCode: input.reasonCode,
     reasonText: sustento,
     motorStatus: note.status,
-    createdBy: userId,
+    createdBy: actor.id,
   });
   return note;
 }

@@ -183,7 +183,13 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
     if (filters.status) conditions.push(eq(saleDocuments.status, filters.status));
     if (filters.docType) conditions.push(eq(saleDocuments.docType, filters.docType));
     const rows = await db
-      .select({ doc: saleDocuments, total: sales.total, soldAt: sales.clientCreatedAt, cashierName: users.name })
+      .select({
+        doc: saleDocuments,
+        total: sales.total,
+        soldAt: sales.clientCreatedAt,
+        cashierId: sales.cashierId,
+        cashierName: users.name,
+      })
       .from(saleDocuments)
       .innerJoin(sales, eq(sales.id, saleDocuments.saleId))
       .leftJoin(users, eq(users.id, sales.cashierId))
@@ -192,6 +198,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
     return rows.map((r) => ({
       ...toSaleDocument(r.doc),
       saleTotal: Number(r.total),
+      cashierId: r.cashierId,
       soldAt: r.soldAt,
       cashierName: r.cashierName,
     }));
@@ -199,13 +206,25 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
 
   async findById(id: number): Promise<SaleDocumentListItem | null> {
     const [row] = await db
-      .select({ doc: saleDocuments, total: sales.total, soldAt: sales.clientCreatedAt, cashierName: users.name })
+      .select({
+        doc: saleDocuments,
+        total: sales.total,
+        soldAt: sales.clientCreatedAt,
+        cashierId: sales.cashierId,
+        cashierName: users.name,
+      })
       .from(saleDocuments)
       .innerJoin(sales, eq(sales.id, saleDocuments.saleId))
       .leftJoin(users, eq(users.id, sales.cashierId))
       .where(eq(saleDocuments.id, id));
     return row
-      ? { ...toSaleDocument(row.doc), saleTotal: Number(row.total), soldAt: row.soldAt, cashierName: row.cashierName }
+      ? {
+          ...toSaleDocument(row.doc),
+          saleTotal: Number(row.total),
+          cashierId: row.cashierId,
+          soldAt: row.soldAt,
+          cashierName: row.cashierName,
+        }
       : null;
   }
 
