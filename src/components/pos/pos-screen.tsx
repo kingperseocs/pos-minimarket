@@ -43,8 +43,8 @@ import { formatSoles } from "@/lib/money";
 import { CartPanel, type PromoOption } from "./cart-panel";
 import { type SidebarCategory, CategorySidebar } from "./category-sidebar";
 import { CheckoutDialog } from "./checkout-dialog";
-import { SaleDocumentDialog } from "./sale-document-dialog";
-import type { SaleDocumentRequest, SaleDocumentType } from "@/domain/entities/sale-document";
+import { watchSaleDocument } from "./sale-document-toast";
+import type { SaleDocumentRequest } from "@/domain/entities/sale-document";
 import { type ShelfExpiry, ExpiryReminder } from "./expiry-reminder";
 import { OfflineIndicator } from "./offline-indicator";
 import { OpenShiftPanel } from "./open-shift-panel";
@@ -97,7 +97,6 @@ export function PosScreen({
   // Electronic document of the sale being charged (boleta by default), and
   // the sale whose document the till is waiting for after confirming.
   const [saleDocument, setSaleDocument] = useState<SaleDocumentRequest>({ type: "boleta" });
-  const [issuing, setIssuing] = useState<{ uuid: string; docType: SaleDocumentType } | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [paymentType, setPaymentType] = useState<PaymentType>("cash");
@@ -322,7 +321,6 @@ export function PosScreen({
 
     cart.clear();
     setCheckoutOpen(false);
-    setIssuing({ uuid: sale.id, docType: saleDocument.type });
     setSaleDocument({ type: "boleta" });
     // The worker belongs to this sale only: the next customer starts clean,
     // with a new sale uuid.
@@ -332,12 +330,22 @@ export function PosScreen({
     saleUuidRef.current = null;
     // Most sales are cash — start the next one from there.
     setPaymentType("cash");
-    toast.success(`Venta registrada · ${PAYMENT_TYPE_LABELS[paymentType]}`, {
-      description: workerName
-        ? `${workerName}${redeemed > 0 ? ` usó sus puntos (−${formatSoles(redeemed)})` : ""}${
-            points > 0 ? `${redeemed > 0 ? " y" : ""} ganó ${points} puntos` : ""
-          }`
-        : undefined,
+    // One toast (top centre) follows the sale's boleta/factura and prints
+    // it when issued; the till stays ready for the next customer.
+    watchSaleDocument({
+      uuid: sale.id,
+      docType: saleDocument.type,
+      total: sale.total,
+      extra: [
+        PAYMENT_TYPE_LABELS[paymentType],
+        workerName
+          ? `${workerName}${redeemed > 0 ? ` usó sus puntos (−${formatSoles(redeemed)})` : ""}${
+              points > 0 ? `${redeemed > 0 ? " y" : ""} ganó ${points} puntos` : ""
+            }`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
     });
   }
 
@@ -609,12 +617,6 @@ export function PosScreen({
         onDocumentChange={setSaleDocument}
         onOpenChange={setCheckoutOpen}
         onConfirm={handleConfirm}
-      />
-      <SaleDocumentDialog
-        key={issuing?.uuid ?? "none"}
-        saleUuid={issuing?.uuid ?? null}
-        docType={issuing?.docType ?? "boleta"}
-        onClose={() => setIssuing(null)}
       />
       {worker && (
         // Keyed by worker: wrong attempts don't carry over to another one.
