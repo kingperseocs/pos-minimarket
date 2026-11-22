@@ -13,7 +13,7 @@ export function AppFooter({ className }: { className?: string }) {
       )}
     >
       <span>
-        © <span className="font-semibold tracking-wide text-foreground/70">REYPERSEO</span>. All
+        © <span className="font-semibold tracking-wide text-foreground/70">reysoftech</span>. All
         rights reserved.
       </span>
       <span aria-hidden>·</span>

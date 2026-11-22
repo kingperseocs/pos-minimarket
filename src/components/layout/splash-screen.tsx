@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
@@ -104,7 +105,7 @@ function VendingMachine({ level }: { level: number }) {
   return (
     <svg
       viewBox="0 0 200 300"
-      className="h-auto w-56 drop-shadow-[0_18px_24px_rgba(124,45,18,0.35)] sm:w-64"
+      className="h-auto max-h-[55vh] w-48 drop-shadow-[0_18px_24px_rgba(124,45,18,0.35)] sm:w-60"
       aria-hidden
     >
       <defs>
@@ -258,7 +259,16 @@ export function SplashScreen() {
       className="vend-root fixed inset-0 z-100 overflow-hidden"
     >
       <DissolveGrid />
-      <div className="vend-machine absolute inset-0 flex items-center justify-center px-6">
+      <div className="vend-machine absolute inset-0 flex flex-col items-center justify-center gap-6 px-6">
+        {/* The store's logo (the one on its receipts) above the machine. */}
+        <Image
+          src="/naveguz.png"
+          alt="Naveguz"
+          width={1157}
+          height={314}
+          priority
+          className="h-auto w-56 drop-shadow-[0_8px_14px_rgba(124,45,18,0.3)] sm:w-72"
+        />
         <VendingMachine level={level} />
       </div>
     </div>

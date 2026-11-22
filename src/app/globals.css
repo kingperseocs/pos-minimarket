@@ -51,7 +51,9 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
+  /* A soft warm off-white (between white and cream), so long sessions at
+     the till are easier on the eyes; cards stay white on top of it. */
+  --background: oklch(0.982 0.009 85);
   --foreground: oklch(0.2 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.2 0 0);
@@ -61,7 +63,7 @@
   --primary-foreground: #1f2937;
   --secondary: #e6f5f9;
   --secondary-foreground: #0082a6;
-  --muted: oklch(0.97 0 0);
+  --muted: oklch(0.962 0.009 85);
   --muted-foreground: oklch(0.5 0 0);
   --accent: #0082a6;
   --accent-foreground: oklch(1 0 0);
@@ -75,7 +77,7 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(1 0 0);
+  --sidebar: oklch(0.99 0.006 85);
   --sidebar-foreground: oklch(0.2 0 0);
   --sidebar-primary: #f59e0b;
   --sidebar-primary-foreground: #1f2937;
@@ -131,6 +133,12 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Never a sideways scroll on phones or tablets: anything wider than the
+     screen is clipped instead of widening the page. */
+  html,
+  body {
+    overflow-x: clip;
   }
   html {
     @apply font-sans;
