@@ -2,15 +2,21 @@ import { ArrowLeftIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { canApprove, canReissue } from "@/application/use-cases/e-invoicing/manage-document";
+import { canVoid } from "@/application/use-cases/e-invoicing/notes";
 import { DocumentActions } from "@/components/admin/e-invoicing/document-actions";
+import { NoteActions } from "@/components/admin/e-invoicing/note-actions";
 import { PageHeader } from "@/components/admin/page-header";
 import { DocumentStatusBadge } from "@/components/e-invoicing/document-status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { REVIEW_REASON_LABELS, SALE_DOCUMENT_TYPE_LABELS } from "@/domain/entities/sale-document";
+import {
+  REVIEW_REASON_LABELS,
+  SALE_DOCUMENT_NOTE_KIND_LABELS,
+  SALE_DOCUMENT_TYPE_LABELS,
+} from "@/domain/entities/sale-document";
 import { STORE_TIME_ZONE, storeDateKey } from "@/domain/value-objects/store-time";
 import { formatSoles } from "@/lib/money";
-import { saleDocumentRepository } from "@/infrastructure/repositories";
+import { saleDocumentNoteRepository, saleDocumentRepository } from "@/infrastructure/repositories";
 
 const dateTime = new Intl.DateTimeFormat("es-PE", { dateStyle: "medium", timeStyle: "short", timeZone: STORE_TIME_ZONE });
 
@@ -29,6 +35,8 @@ export default async function AdminDocumentPage({ params }: PageProps<"/admin/co
   if (!doc) notFound();
 
   const title = `${SALE_DOCUMENT_TYPE_LABELS[doc.docType]} ${doc.number ?? "(sin número)"}`;
+  const notes = await saleDocumentNoteRepository.listByDocument(doc.id);
+  const valid = doc.status === "issued" && (doc.motorStatus === "ACEPTADO" || doc.motorStatus === "OBSERVADO");
   const awaitsAccountant = doc.status === "review" && !canApprove(doc);
 
   return (
@@ -124,6 +132,41 @@ export default async function AdminDocumentPage({ params }: PageProps<"/admin/co
             : null
         }
       />
+
+      {valid && <NoteActions id={doc.id} canVoid={canVoid(doc, new Date())} />}
+
+      {notes.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Notas y anulaciones</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y text-sm">
+              {notes.map((note) => (
+                <li key={note.id} className="flex flex-wrap items-center gap-3 py-2">
+                  <span className="font-medium">
+                    {SALE_DOCUMENT_NOTE_KIND_LABELS[note.kind]} {note.number}
+                  </span>
+                  <span className="text-muted-foreground">{note.reasonText}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {note.motorStatus} · {note.createdByName} · {dateTime.format(note.createdAt)}
+                  </span>
+                  {note.kind !== "void" && (
+                    <a
+                      className="text-xs underline underline-offset-4"
+                      href={`/api/e-invoicing/notes/${note.id}/pdf?formato=a4`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      PDF
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

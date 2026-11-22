@@ -12,6 +12,8 @@ import {
   discountPolicyRepository,
   productRepository,
   promoDiscountRepository,
+  eInvoicingSettingsRepository,
+  saleDocumentNoteRepository,
   saleDocumentRepository,
   saleRepository,
   salesAnalyticsRepository,
@@ -72,4 +74,11 @@ export { DNI_LOOKUP_TIMEOUT_MS, RUC_LOOKUP_TIMEOUT_MS };
 export const eInvoicingDeps = {
   documents: saleDocumentRepository,
   gateway: eInvoicingGateway,
+};
+
+// Annulments and notes also need the notes and the series settings.
+export const eInvoicingNotesDeps = {
+  ...eInvoicingDeps,
+  notes: saleDocumentNoteRepository,
+  settings: eInvoicingSettingsRepository,
 };

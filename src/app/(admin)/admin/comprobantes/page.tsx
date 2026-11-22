@@ -1,4 +1,6 @@
+import { ChartColumnIcon } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { Suspense } from "react";
 import { listSaleDocumentsUseCase } from "@/application/use-cases/e-invoicing/list-sale-documents";
 import { DocumentsFilters, type DocumentFilterValues } from "@/components/admin/e-invoicing/documents-filters";
@@ -126,7 +128,15 @@ export default async function AdminDocumentsPage({ searchParams }: PageProps<"/a
             {formatDayHeading(filters.date)}
           </span>
         }
-        action={<DocumentsFilters values={filters} today={today} />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <DocumentsFilters values={filters} today={today} />
+            <Button variant="outline" nativeButton={false} render={<Link href={`/admin/comprobantes/reporte?date=${filters.date}`} />}>
+              <ChartColumnIcon data-icon="inline-start" />
+              Reporte del día
+            </Button>
+          </div>
+        }
       />
       {filters.date === today && <LiveRefresh />}
       <Suspense key={`${filters.date}-${filters.status}-${filters.docType}`} fallback={<TableSkeleton />}>

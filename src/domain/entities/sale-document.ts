@@ -138,3 +138,46 @@ export interface SaleDocumentFilters {
   status?: SaleDocumentStatus;
   docType?: SaleDocumentType;
 }
+
+// Notes and annulments issued on a sale's document.
+export type SaleDocumentNoteKind = "credit_note" | "debit_note" | "void";
+
+export const SALE_DOCUMENT_NOTE_KIND_LABELS: Record<SaleDocumentNoteKind, string> = {
+  credit_note: "Nota de crédito",
+  debit_note: "Nota de débito",
+  void: "Anulación",
+};
+
+export interface SaleDocumentNote {
+  id: number;
+  saleDocumentId: number;
+  kind: SaleDocumentNoteKind;
+  motorId: string | null;
+  number: string | null;
+  reasonCode: string | null;
+  reasonText: string;
+  motorStatus: string | null;
+  createdBy: number;
+  createdByName: string | null;
+  createdAt: Date;
+}
+
+// The credit-note reasons offered at the store (SUNAT catalog 09): the ones
+// that cancel the whole sale, so no lines need to be picked. Partial returns
+// (07) and discounts come later with the accountant's answer.
+export const CREDIT_NOTE_REASONS: Record<string, string> = {
+  "01": "Anulación de la operación",
+  "02": "Anulación por error en el RUC",
+  "06": "Devolución total",
+};
+
+// Debit-note reasons (SUNAT catalog 10).
+export const DEBIT_NOTE_REASONS: Record<string, string> = {
+  "01": "Intereses por mora",
+  "02": "Aumento en el valor",
+  "03": "Penalidades / otros conceptos",
+};
+
+// Annulment (baja / resumen diario) is only allowed this many days after
+// issue (REGLAS-2026, error 2957; the motor enforces it too).
+export const VOID_MAX_DAYS = 7;
