@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Nunito } from "next/font/google";
 import localFont from "next/font/local";
 import { AuthSessionProvider } from "@/components/layout/auth-session-provider";
 import { DevServiceWorkerReset } from "@/components/layout/dev-service-worker-reset";
@@ -7,9 +6,11 @@ import { SplashScreen } from "@/components/layout/splash-screen";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
-// Roboto se sirve localmente: Google Fonts a veces responde con URLs
-// `fonts.gstatic.com/l/font?kit=…&skey=…` que Turbopack no puede resolver
-// ("next/font/google queries have exactly one entry").
+// Todas las fuentes se sirven localmente (@fontsource-variable). Google Fonts a
+// veces responde con URLs `fonts.gstatic.com/l/font?kit=…&skey=…` sin extensión:
+// Turbopack no las resuelve y next/font/google rompe el build con webpack
+// ("Cannot read properties of null (reading '1')"). Le pasó a Vercel y al CI
+// el 2026-11-22 con Nunito y Geist Mono.
 const roboto = localFont({
   variable: "--font-roboto",
   src: [
@@ -22,15 +23,28 @@ const roboto = localFont({
   display: "swap",
 });
 
-const nunito = Nunito({
+const nunito = localFont({
   variable: "--font-nunito",
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
+  src: [
+    {
+      path: "../../node_modules/@fontsource-variable/nunito/files/nunito-latin-wght-normal.woff2",
+      weight: "200 1000",
+      style: "normal",
+    },
+  ],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
   variable: "--font-geist-mono",
-  subsets: ["latin"],
+  src: [
+    {
+      path: "../../node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+      weight: "100 900",
+      style: "normal",
+    },
+  ],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
