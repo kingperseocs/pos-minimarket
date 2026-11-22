@@ -1,8 +1,9 @@
 "use client";
 
-import { LoaderCircleIcon, PrinterIcon, RefreshCwIcon, SendIcon } from "lucide-react";
+import { LoaderCircleIcon, PrinterIcon, SendIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { LiveRefresh } from "@/components/e-invoicing/live-refresh";
 import { toast } from "sonner";
 import { DocumentStatusBadge } from "@/components/e-invoicing/document-status-badge";
 import { printDocumentPdf } from "@/components/e-invoicing/print-pdf";
@@ -35,7 +36,7 @@ const time = new Intl.DateTimeFormat("es-PE", { timeStyle: "short", timeZone: ST
 
 export function TodayDocuments({ documents }: { documents: TodayDocumentRow[] }) {
   const router = useRouter();
-  const [refreshing, startRefresh] = useTransition();
+  const [, startRefresh] = useTransition();
   const [printing, setPrinting] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
   const pending = documents.filter((d) => d.status === "queued" || d.status === "failed").length;
@@ -72,11 +73,8 @@ export function TodayDocuments({ documents }: { documents: TodayDocumentRow[] })
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing}>
-          <RefreshCwIcon data-icon="inline-start" className={refreshing ? "animate-spin" : undefined} />
-          Actualizar
-        </Button>
+      <LiveRefresh />
+      <div className="flex flex-wrap items-center gap-2 empty:hidden">
         {pending > 0 && (
           <Button variant="outline" onClick={() => void retry()} disabled={retrying}>
             {retrying ? <LoaderCircleIcon className="animate-spin" /> : <SendIcon data-icon="inline-start" />}

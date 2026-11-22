@@ -16,7 +16,9 @@ import {
   type SaleDocumentType,
 } from "@/domain/entities/sale-document";
 import { STORE_TIME_ZONE, storeDateKey, storeDayRange } from "@/domain/value-objects/store-time";
+import { formatDayHeading } from "@/lib/day-heading";
 import { formatSoles } from "@/lib/money";
+import { LiveRefresh } from "@/components/e-invoicing/live-refresh";
 import { saleDocumentRepository } from "@/infrastructure/repositories";
 
 const time = new Intl.DateTimeFormat("es-PE", { timeStyle: "short", timeZone: STORE_TIME_ZONE });
@@ -113,17 +115,20 @@ async function DocumentsReport({ filters }: { filters: DocumentFilterValues }) {
 export default async function AdminDocumentsPage({ searchParams }: PageProps<"/admin/comprobantes">) {
   const today = storeDateKey(new Date());
   const filters = parseFilters(await searchParams, today);
-  const label = new Intl.DateTimeFormat("es-PE", { dateStyle: "full", timeZone: "UTC" }).format(
-    new Date(`${filters.date}T00:00:00Z`),
-  );
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Comprobantes"
-        description={filters.date === today ? `Hoy, ${label}` : label}
+        description={
+          <span className="font-medium tracking-wide">
+            {filters.date === today ? "HOY · " : ""}
+            {formatDayHeading(filters.date)}
+          </span>
+        }
         action={<DocumentsFilters values={filters} today={today} />}
       />
+      {filters.date === today && <LiveRefresh />}
       <Suspense key={`${filters.date}-${filters.status}-${filters.docType}`} fallback={<TableSkeleton />}>
         <DocumentsReport filters={filters} />
       </Suspense>

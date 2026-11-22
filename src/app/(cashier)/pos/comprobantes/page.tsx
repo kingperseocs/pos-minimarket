@@ -5,6 +5,7 @@ import { TodayDocuments } from "@/components/pos/today-documents";
 import { Button } from "@/components/ui/button";
 import { can } from "@/domain/entities/user";
 import { storeDateKey, storeDayRange } from "@/domain/value-objects/store-time";
+import { formatDayHeading } from "@/lib/day-heading";
 import { requirePagePermission } from "@/infrastructure/auth/guards";
 import { saleDocumentRepository } from "@/infrastructure/repositories";
 
@@ -25,7 +26,7 @@ export default async function CashierDocumentsPage() {
       <div className="flex items-center justify-between gap-2">
         <div>
           <h1 className="font-heading text-xl font-semibold">Comprobantes de hoy</h1>
-          <p className="text-sm text-muted-foreground">Boletas y facturas de las ventas de hoy.</p>
+          <p className="text-sm font-medium tracking-wide text-muted-foreground">{formatDayHeading(today)}</p>
         </div>
         <Button variant="outline" nativeButton={false} render={<Link href="/pos" />}>
           <ArrowLeftIcon data-icon="inline-start" />
