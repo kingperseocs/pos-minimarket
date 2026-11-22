@@ -6,8 +6,10 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set");
 }
 
-// Supabase: la app usa el "transaction pooler" (puerto 6543), que no admite
-// sentencias preparadas; por eso prepare: false. En Vercel cada función abre su
+// Supabase: la app usa el "session pooler" (puerto 5432). El "transaction
+// pooler" (6543) mezclaba los parámetros de consultas en paralelo (una fecha
+// llegaba como "f"; probado el 2026-11-21), así que no se usa. prepare: false
+// mantiene compatibilidad con cualquier pooler. En Vercel cada función abre su
 // propio pool, así que se mantienen pocas conexiones (DB_POOL_MAX, 5 por defecto).
 function createClient() {
   return postgres(process.env.DATABASE_URL!, {
