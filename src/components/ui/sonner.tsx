@@ -11,6 +11,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // Top centre, where the cashier is already looking; rich colours so a
+      // warning or an error reads at a glance instead of a pale grey box.
+      position="top-center"
+      richColors
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />
@@ -38,7 +42,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast: "cn-toast shadow-lg",
+          title: "font-semibold",
+          description: "!opacity-100 !text-current",
         },
       }}
       {...props}

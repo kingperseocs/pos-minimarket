@@ -82,15 +82,23 @@ export function CheckoutDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-4 bg-muted/60 sm:max-w-sm">
+      <DialogContent
+        className="gap-4 bg-muted/60 sm:max-w-sm"
+        // A plain dark veil (no blur), like the documents modal.
+        overlayClassName="bg-black/50 supports-backdrop-filter:backdrop-blur-none"
+      >
         <DialogTitle className="sr-only">Confirmar cobro</DialogTitle>
         <DialogDescription className="sr-only">
           Revisa el ticket antes de registrar la venta.
         </DialogDescription>
 
+        {/* Boleta or factura first: the customer's document is asked before
+            reviewing the ticket. */}
+        <DocumentPicker value={document} total={pricing.total} onChange={onDocumentChange} />
+
         {/* The ticket: white paper with a torn (zigzag) bottom edge. */}
         <div
-          className="max-h-[60vh] overflow-y-auto bg-white px-5 pt-5 pb-7 font-mono text-[13px] leading-snug text-neutral-900 shadow-md dark:bg-neutral-100"
+          className="max-h-[45vh] overflow-y-auto bg-white px-5 pt-5 pb-7 font-mono text-[13px] leading-snug text-neutral-900 shadow-md dark:bg-neutral-100"
           style={{
             maskImage:
               "linear-gradient(#000 0 0) top/100% calc(100% - 10px) no-repeat, conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom/16px 10px repeat-x",
@@ -211,8 +219,6 @@ export function CheckoutDialog({
             {document.type === "factura" ? "factura" : "boleta"} electrónica
           </p>
         </div>
-
-        <DocumentPicker value={document} total={pricing.total} onChange={onDocumentChange} />
 
         <DialogFooter className="mx-0 mb-0 gap-2 border-0 bg-transparent p-0 sm:gap-2">
           <Button
