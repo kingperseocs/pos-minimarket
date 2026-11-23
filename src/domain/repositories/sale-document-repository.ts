@@ -17,6 +17,8 @@ export interface IssueContext {
   affectations: Map<number, IgvAffectation>;
   globalOverride: IgvAffectation | null;
   cashierName: string | null;
+  // When the till charged it (an offline sale may sync days later).
+  soldAt: Date;
 }
 
 export interface RequeuePatch {

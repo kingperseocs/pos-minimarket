@@ -2,6 +2,7 @@ import { MotorRejectedError, MotorUnavailableError } from "@/domain/errors";
 import type { EInvoicingGateway } from "@/domain/repositories/e-invoicing-gateway";
 import type { SaleDocumentRepository } from "@/domain/repositories/sale-document-repository";
 import { buildIssueRequest } from "@/domain/services/e-invoice";
+import { storeDateKey } from "@/domain/value-objects/store-time";
 
 export interface IssueDeps {
   documents: SaleDocumentRepository;
@@ -32,6 +33,7 @@ export async function issueSaleDocument(deps: IssueDeps, saleUuid: string): Prom
   const context = await deps.documents.claim(saleUuid, ISSUE_LOCK_MS, MAX_ISSUE_ATTEMPTS);
   if (!context) return "skipped";
   const { document } = context;
+  const now = (deps.now ?? (() => new Date()))();
 
   const request = buildIssueRequest({
     document,
@@ -39,6 +41,8 @@ export async function issueSaleDocument(deps: IssueDeps, saleUuid: string): Prom
     affectations: context.affectations,
     globalOverride: context.globalOverride,
     cashierName: context.cashierName,
+    saleDay: storeDateKey(context.soldAt),
+    today: storeDateKey(now),
   });
 
   try {
@@ -53,7 +57,6 @@ export async function issueSaleDocument(deps: IssueDeps, saleUuid: string): Prom
     }
     const message =
       error instanceof MotorUnavailableError || error instanceof Error ? error.message : String(error);
-    const now = (deps.now ?? (() => new Date()))();
     const attempts = document.attempts + 1;
     await deps.documents.markRetry(document.id, message, new Date(now.getTime() + retryDelayMs(attempts)));
     return "retry";

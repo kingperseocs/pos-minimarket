@@ -152,6 +152,8 @@ export interface MotorCustomer {
 
 export interface MotorIssueRequest {
   serie: string;
+  // AAAA-MM-DD, only for a sale synced on a later day (D-23).
+  fecha_emision?: string;
   cajero?: string;
   cliente?: MotorCustomer;
   items: MotorItem[];
@@ -174,6 +176,10 @@ export function buildIssueRequest(input: {
   affectations: Map<number, IgvAffectation>;
   globalOverride: IgvAffectation | null;
   cashierName?: string | null;
+  // Store days (Lima) of the sale and of now: if they differ, the document
+  // carries the sale's real date.
+  saleDay?: string;
+  today?: string;
 }): MotorIssueRequest {
   const { document } = input;
   const request: MotorIssueRequest = {
@@ -187,6 +193,9 @@ export function buildIssueRequest(input: {
       afectacion_igv: lineAffectation(input.affectations.get(item.productId), input.globalOverride),
     })),
   };
+  if (input.saleDay && input.today && input.saleDay !== input.today) {
+    request.fecha_emision = input.saleDay;
+  }
   const cashier = input.cashierName?.trim();
   if (cashier) request.cajero = cashier.slice(0, 100);
   if (document.customerDocType !== "0" && document.customerDocNumber && document.customerName) {

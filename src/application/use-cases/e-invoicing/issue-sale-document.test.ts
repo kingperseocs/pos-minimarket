@@ -43,12 +43,13 @@ function context(over: Partial<SaleDocument> = {}): IssueContext {
     affectations: new Map([[1, "10"]]),
     globalOverride: null,
     cashierName: "CAJA 1",
+    soldAt: new Date("2026-11-22T14:00:00.000Z"),
   };
 }
 
 function fakes(opts: { claim?: IssueContext | null; issue?: () => Promise<MotorDocument>; due?: string[] }) {
   const log: string[] = [];
-  const issued: { type: string; key: string; serie: string }[] = [];
+  const issued: { type: string; key: string; serie: string; fecha?: string }[] = [];
   const documents = {
     async claim() {
       return opts.claim === undefined ? context() : opts.claim;
@@ -79,7 +80,7 @@ function fakes(opts: { claim?: IssueContext | null; issue?: () => Promise<MotorD
   } as SaleDocumentRepository;
   const gateway = {
     async issue(type, request, key) {
-      issued.push({ type, key, serie: request.serie });
+      issued.push({ type, key, serie: request.serie, ...(request.fecha_emision && { fecha: request.fecha_emision }) });
       return (opts.issue ?? (async () => ({ id: "m-1", number: "B001-8", status: "ACEPTADO", sunatCode: 0, sunatDescription: "ok" })))();
     },
   } as EInvoicingGateway;
@@ -139,5 +140,20 @@ describe("drainOutbox", () => {
     const counts = await drainOutbox(deps);
     assert.deepEqual(counts, { issued: 2, retry: 0, rejected: 0, skipped: 0 });
     assert.equal(issued.length, 2);
+  });
+});
+
+describe("issueSaleDocument with an offline sale", () => {
+  it("a sale synced the next day carries its real date", async () => {
+    const yesterday = { ...context(), soldAt: new Date("2026-11-21T23:30:00.000Z") }; // 18:30 in Lima
+    const { deps, issued } = fakes({ claim: yesterday });
+    await issueSaleDocument(deps, UUID); // now: 2026-11-22 10:00 in Lima
+    assert.equal(issued[0].fecha, "2026-11-21");
+  });
+
+  it("a sale of today sends no date", async () => {
+    const { deps, issued } = fakes({});
+    await issueSaleDocument(deps, UUID);
+    assert.equal(issued[0].fecha, undefined);
   });
 });

@@ -117,7 +117,11 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
       .orderBy(asc(saleItems.id));
 
     const [extra] = await db
-      .select({ cashierName: users.name, override: eInvoicingSettings.globalIgvOverride })
+      .select({
+        cashierName: users.name,
+        override: eInvoicingSettings.globalIgvOverride,
+        soldAt: sales.clientCreatedAt,
+      })
       .from(sales)
       .innerJoin(users, eq(users.id, sales.cashierId))
       .leftJoin(eInvoicingSettings, eq(eInvoicingSettings.id, 1))
@@ -135,6 +139,7 @@ export class DrizzleSaleDocumentRepository implements SaleDocumentRepository {
       affectations: new Map(lines.map((l) => [l.productId, l.affectation as IgvAffectation])),
       globalOverride: (extra?.override ?? null) as IgvAffectation | null,
       cashierName: extra?.cashierName ?? null,
+      soldAt: extra?.soldAt ?? row.createdAt,
     };
   }
 
